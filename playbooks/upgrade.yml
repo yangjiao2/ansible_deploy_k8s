@@ -1,0 +1,13 @@
+---
+- include: upgrade-system.yml
+- include: 40.upgrade-prepare.yml
+- include: 02.download.yml op_way=upgrade
+- include: backup-etcd.yml snapdb=old_etcd_data overwrite=n
+- include: 41.upgrade-etcd.yml
+- include: restart-cni.yml
+- include: 42.upgrade-kube-apiserver.yml 
+- include: 43.upgrade-kube-scheduler.yml
+- include: 44.upgrade-kubectl.yml
+- include: 45.upgrade-kubelet.yml
+- include: 46.upgrade-controller-manager.yml
+- include: 47.upgrade-kube-proxy.yml

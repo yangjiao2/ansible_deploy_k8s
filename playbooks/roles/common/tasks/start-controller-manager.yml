@@ -1,0 +1,9 @@
+- name: Start new kube-controller-manager service
+  systemd:
+    name: kube-controller-manager
+    enabled: yes
+    state: started
+  register: st_cm
+  retries: 10
+  delay: 3
+  until: st_cm.status.ActiveState == "active"

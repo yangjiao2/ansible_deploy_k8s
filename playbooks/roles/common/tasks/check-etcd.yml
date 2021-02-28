@@ -1,0 +1,21 @@
+- name: Get kube-etcd status
+  shell: "systemctl status kube-etcd |grep 'Active:' | cut -d '(' -f2|cut -d ')' -f1"
+  register: kube_etcd_status
+
+
+- name: Echo kube-etcd status
+  debug:
+    msg: "Current etcd status: {{ kube_etcd_status.stdout }}"
+
+- name: Check etcd health
+  shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl --endpoints=https://{{ ansible_host }}:2379 
+  --cacert={{ K8S_SSL_DIR }}/ca.pem --cert={{ ETCD_SSL_DIR }}/etcd.pem 
+  --key={{ ETCD_SSL_DIR }}/etcd-key.pem endpoint health"
+  register: etcd_health_res
+  retries: 10
+  delay: 3
+  until: etcd_health_res.rc == 0
+
+- name: Echo etcd health result
+  debug:
+    msg: "{{ etcd_health_res.stdout_lines|list }}"

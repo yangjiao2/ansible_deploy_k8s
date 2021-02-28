@@ -1,0 +1,310 @@
+#######################################
+# 拷贝 kubelet, kube-proxy 的 csr 和 system 配置文件
+#######################################
+
+- name: Copy node component csr
+  delegate_to: localhost
+  run_once: true
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ role_path }}/files/{{ item }}"
+  with_items:
+    - "kube-proxy-csr.json"
+
+- name: Copy system proxy unit
+  template:
+    src: templates/{{ item }}.j2
+    dest: "/etc/systemd/system/{{ item }}"
+  with_items:
+    - "kube-proxy.service"
+
+- name: Copy system kubelet unit
+  template:
+    src: templates/{{ item }}.j2
+    dest: "/etc/systemd/system/{{ item }}"
+  with_items:
+    - "kubelet.service"
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME == "root" )
+
+- name: Copy supervisor unit
+  block:
+    - name: Copy unit
+      template:
+        src: "templates/{{ role_set }}.super.service.j2"
+        dest: "{{ SUPERVISOR_DIR }}/supervisor/supervisor.d/{{ role_set }}.service"
+
+    - name: Chown dir of service
+      file:
+        path: "{{ SUPERVISOR_DIR }}/{{ item }}"
+        state: "directory"
+        mode: "0755"
+        owner: "{{ DEPLOY_USER_NAME }}"
+        group: "{{ DEPLOY_USER_NAME }}"
+        recurse: yes
+      with_items:
+        - "supervisor/supervisor.d"
+        - "services/{{ role_set }}/log"
+      ignore_errors: True
+
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME != "root" )
+
+- name: Copy kubelet conf
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ K8S_DIR }}/etc/kubernetes/{{ item }}"
+  with_items:
+    - "resolv.conf"
+    - "kube-proxy-config.yaml"
+    - "kubelet-config.yaml"
+
+- name: Copy pause image tar 
+  copy:
+    src: "{{ role_path }}/files/pause-amd64.tar"
+    dest: "/opt/k8s/work/"
+
+- name: Docker load pause-amd64.tar
+  shell: "docker load -i /opt/k8s/work/pause-amd64.tar"
+
+#######################################
+# kubelet
+#######################################
+
+- name: Mkdir kubelet dir
+  file:
+    path: "{{ K8S_DIR }}/lib/kubelet"
+    state: directory
+    mode: 0755
+
+- name: Set cluster 
+  shell: "/usr/local/bin/kubectl config set-cluster kubernetes 
+  --certificate-authority={{ K8S_SSL_DIR }}/ca.pem --embed-certs=true 
+  --server={{ KUBE_APISERVER }} 
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubelet-bootstrap.kubeconfig"
+
+- name: Set client credentials
+  shell: "/usr/local/bin/kubectl config set-credentials kubelet-bootstrap 
+  --token={{ BOOTSTRAP_TOKEN }}  
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubelet-bootstrap.kubeconfig"
+
+- name: Set context
+  shell: "/usr/local/bin/kubectl config set-context default   
+  --cluster=kubernetes 
+  --user=kubelet-bootstrap   
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubelet-bootstrap.kubeconfig"
+
+- name: Use context
+  shell: "/usr/local/bin/kubectl config use-context default   
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubelet-bootstrap.kubeconfig"
+
+- name: Grant clusterrole
+  shell: "/usr/local/bin/kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --group=system:bootstrappers"
+  #shell: "/usr/local/bin/kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --group=system:kubelet-bootstrap"
+  run_once: true
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "AlreadyExists" in shell_result.stderr)
+
+- name: Mkdir {{ K8S_DIR }}/kubelet/kubelet-plugins/volume/exec
+  file:
+    path: "{{ K8S_DIR }}/kubelet/kubelet-plugins/volume/exec"
+    state: directory
+    mode: 0755
+
+- name: Swap off
+  shell: "swapoff -a"
+
+- name: Systemd management
+  block:
+  - name: Just force systemd to reread configs (2.4 and above)
+    systemd:
+      daemon_reload: yes
+  
+  - name: Enable kubelet service
+    systemd:
+      name: kubelet
+      enabled: yes
+      masked: no
+  
+  - name: Restart kubelet service
+    systemd:
+      state: restarted
+      name: kubelet
+  
+  - name: Get kubelet status
+    shell: "systemctl status kubelet |grep 'Active:'"
+    register: kubelet_status
+    tags: 
+      - "status"
+  
+  - name: Echo kubelet status
+    debug:
+      msg: "{{ kubelet_status.stdout }}"
+    tags: 
+      - "status"
+
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME == "root" )
+
+- name: Supervisor management
+  block:
+    - name: Mkdir of log
+      file:
+        path: "{{ SUPERVISOR_DIR }}/services/{{ role_set }}/log"
+        state: directory
+        owner: "{{ DEPLOY_USER_NAME }}"
+        group: "{{ DEPLOY_USER_NAME }}"
+        mode: "0755"
+
+    - name: Just force supervisor to reload
+      shell: "supervisorctl update; supervisorctl restart {{ role_set }}"
+
+    - name: Chown of log
+
+      file:
+        path: "{{ SUPERVISOR_DIR }}/services/{{ role_set }}/log/{{ role_set }}.log"
+        state: file
+        owner: "{{ DEPLOY_USER_NAME }}"
+        group: "{{ DEPLOY_USER_NAME }}"
+        mode: "0755"
+      ignore_errors: True
+
+    - name: Get {{ role_set }} status
+      shell: "supervisorctl status {{ role_set }}"
+      register: role_status
+      tags:
+        - "status"
+    - name: Echo {{ role_set }} status
+      debug:
+        msg: role_status.stdout
+      tags:
+        - "status"
+
+    - name: Wait until port open {{ role_set }}:{{ role_port }}
+      shell: "nc -z -w 3 {{ ansible_host }} {{ role_port }}"
+      register: status_port
+      retries: 20
+      delay: 10
+      until: status_port.rc == 0
+
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME != "root" )
+
+- name: Use cert access kubelet api
+  shell: "curl -s --cacert {{ K8S_SSL_DIR }}/ca.pem --cert {{ K8S_SSL_DIR }}/admin.pem --key {{ K8S_SSL_DIR }}/admin-key.pem https://{{ ansible_host }}:{{ KUBELET_PORT }}/metrics|head"
+  register: kubelet_metric_result
+
+- name: Echo kubelet metric api result
+  debug:
+    msg: "{{ kubelet_metric_result.stdout }}"
+  
+- name: Copy csr-crb.yaml
+  copy:
+    src: csr-crb.yaml
+    dest: "{{ K8S_DIR }}/etc/kubernetes/csr-crb.yaml"
+    mode: 0755
+
+- name: Kubectl apply csr-crb.yaml
+  shell: "/usr/local/bin/kubectl apply -f {{ K8S_DIR }}/etc/kubernetes/csr-crb.yaml"
+  run_once: true
+
+#######################################
+# kube-proxy
+#######################################
+
+- name: Generate kube-proxy certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/kube-node/files/kube-proxy-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/kube-node/files/kube-proxy"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-proxy key pem
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "kube-proxy-key.pem"
+    - "kube-proxy.pem"
+     
+- name: Generate kube-proxy kubeconfig file | Set cluster
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-cluster kubernetes 
+  --certificate-authority=roles/cert/files/ca.pem 
+  --embed-certs=true 
+  --server={{ KUBE_APISERVER }} 
+  --kubeconfig=roles/kube-node/files/kube-proxy.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-proxy file | Set client credentials
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-credentials system:kube-proxy  
+  --client-certificate=roles/kube-node/files/kube-proxy.pem 
+  --client-key=roles/kube-node/files/kube-proxy-key.pem 
+  --embed-certs=true 
+  --kubeconfig=roles/kube-node/files/kube-proxy.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-proxy file | Set context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-context default   
+  --cluster=kubernetes 
+  --user=system:kube-proxy  
+  --kubeconfig=roles/kube-node/files/kube-proxy.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-proxy file | Use context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config use-context default  
+  --kubeconfig=roles/kube-node/files/kube-proxy.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-proxy.kubeconfig file
+  copy:
+    src: kube-proxy.kubeconfig
+    dest: "{{ K8S_DIR }}/etc/kubernetes/kube-proxy.kubeconfig"
+    mode: 0755
+
+- name: Mkdir {{ K8S_DIR }}/kube-proxy
+  file:
+    path: "{{ K8S_DIR }}/kube-proxy"
+    state: directory
+    mode: 0755
+
+- name: Modprobe ip_vs_rr
+  shell: "modprobe ip_vs_rr"
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable kube-proxy service
+  systemd:
+    name: kube-proxy
+    enabled: yes
+    masked: no
+
+- name: Restart kube-proxy service
+  systemd:
+    state: restarted
+    name: kube-proxy
+
+- name: Get kube-proxy status
+  shell: "systemctl status kube-proxy |grep 'Active:'"
+  register: kube_proxy_status
+  tags: 
+    - "status"
+
+- name: Echo kube-proxy 
+  debug:
+    msg: "{{ kube_proxy_status.stdout }}"
+  tags: 
+    - "status"
+
+- name: Get ipvs route rule
+  shell: "ipvsadm -ln"
+  register: ipvs_route_rule
+
+- name: Echo ipvs route rule
+  debug:
+    msg: "{{ ipvs_route_rule.stdout }}"

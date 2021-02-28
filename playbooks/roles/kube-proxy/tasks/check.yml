@@ -1,0 +1,10 @@
+- name: Check kube-proxy
+  import_role:
+    name: common
+    tasks_from: check-kube-proxy
+- name: Check whether container restart
+  import_role:
+    name: common
+    tasks_from: check-container
+  vars:
+    component: kube-proxy

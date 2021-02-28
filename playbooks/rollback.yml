@@ -1,0 +1,12 @@
+---
+- include: 40.upgrade-prepare.yml
+- include: 51.rollback-kube-proxy.yml
+- include: 52.rollback-kubectl.yml
+- include: 53.rollback-kubelet.yml
+- include: 54.rollback-kube-scheduler.yml
+- include: 55.rollback-controller-manager.yml
+- include: 56.rollback-kube-apiserver.yml
+- include: 57.rollback-etcd.yml snapdb=old_etcd_data
+- include: restart-cni.yml
+- include: restart-kube-apiserver.yml
+# - include: restore-etcd.yml snapdb=old_etcd_data

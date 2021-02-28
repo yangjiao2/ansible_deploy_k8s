@@ -1,0 +1,7 @@
+---
+- hosts: k8s_node
+  tasks:
+    - name: Upgrade system 
+      include_role:
+        name:  system
+        tasks_from: node

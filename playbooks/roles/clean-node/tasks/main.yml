@@ -1,0 +1,75 @@
+- name: Force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Stop and disbale kubelet, kube-proxy 
+  shell: "systemctl stop kubelet kube-proxy; 
+          systemctl disable kubelet kube-proxy"
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "No such file or directory" in shell_result.stderr)
+
+- name: Delete all container
+  shell: "docker ps -a -q | xargs -r docker rm --force --volumes"
+
+- name: Force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+    
+- name: Stop and disable docker and flannel
+  shell: "systemctl stop flanneld docker; systemctl disable flanneld docker"
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "No such file or directory" in shell_result.stderr)
+
+- name: Stop remain process
+  shell: "pkill docker; pkill docker-; pkill pod"
+  register: shell_result
+  failed_when: shell_result.rc > 1
+
+- name: Umount pod file
+  vars:
+    separator: '\'
+  shell: "awk '$2 ~ path && $2 != path {print $2}' path={{ K8S_DIR }} /proc/mounts | cut -d '{{ separator }}' -f 1 | xargs -r umount -f"
+
+- name: Umount docker default network namespace
+  shell: "ls /var/run/docker/netns/* | xargs umount || :"
+
+- name: Delete systemd unit file
+  shell: "rm -rf /etc/systemd/system/{kubelet,kube-proxy,docker,flanneld}.service"
+
+- name: Clean iptables
+  shell: "iptables -F && iptables -X && iptables -F -t nat && iptables -X -t nat"
+
+- name: Delete flanneld and docker bridge
+  shell: "ip link del flannel.1; ip link del docker0; ip link del kube-ipvs0"
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "Cannot find device" in shell_result.stderr)
+
+- name: Delete docker and k8s dir
+  shell: "rm -rf {{ item }}"
+  with_items:
+  - "{{ K8S_DIR }}"
+  - "{{ DOCKER_DIR }}"
+  - /var/run/flannel
+  - /var/run/docker
+  - /opt/k8s
+  - /opt/cni
+  - /etc/cni
+  - /bin/conntrack
+  - /var/lib/kubelet
+  - /var/lib/docker
+  
+- name: Delete binary file
+  shell: "rm -rf {{ item }}"
+  with_items: 
+  - /usr/bin/containerd
+  - /usr/bin/containerd-shim
+  - /usr/bin/ctr
+  - /usr/bin/docker
+  - /usr/bin/dockerd
+  - /usr/bin/docker-init
+  - /usr/bin/docker-proxy
+  - /usr/bin/runc

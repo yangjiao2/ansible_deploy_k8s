@@ -1,0 +1,56 @@
+- name: Upgrade kubectl
+  block:
+    - name: Get kubectl command path
+      shell: "echo `cat $(which k)` | awk '{print $1}' | xargs  dirname  | xargs dirname"
+      register: kubectl_cmd_path
+
+    - name: Echo kubectl command paht
+      debug:
+        msg: "{{ kubectl_cmd_path.stdout }}"
+
+    - name: Move new kubectl
+      copy:
+        remote_src: True
+        src: "{{ K8S_DIR }}/bin/{{ item }}"
+        dest: "{{ kubectl_cmd_path.stdout }}/tools/{{ item }}"
+        mode: 0755
+      with_items:
+        - kubectl.16
+
+    - name: Move new kubectl to /usr/local/bin
+      copy:
+        remote_src: True
+        src: "{{ K8S_DIR }}/bin/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: 0755
+      with_items:
+        - kubectl.16    
+        
+    - name: Move backup.sh
+      copy:
+        src: "roles/common/files/backup.sh"
+        dest: "{{ K8S_DIR }}/bin/"
+        mode: 0755
+
+    - name: Execute whether backup kubectl
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ kubectl_cmd_path.stdout }}/tools/kubectl.16 {{ kubectl_cmd_path.stdout }}/tools/kubectl"
+ 
+    - name: Execute whether backup kubectl for /usr/local/bin/
+      shell: "{{ K8S_DIR }}/bin/backup.sh /usr/local/bin/kubectl.16 /usr/local/bin/kubectl"
+
+    - name: Mkdir ~/.kube
+      file:
+        path: ~/.kube
+        state: directory
+        mode: 0755
+            
+    - name: Copy kubeconfig
+      copy:
+        remote_src: True
+        src: "{{ kubectl_cmd_path.stdout }}/.output/public_conf/.kube/config"
+        dest: "~/.kube/config"
+        mode: 0755
+
+  # when: (op is not defined) or (op == "upgrade")
+- name: Check kubectl
+  import_tasks: check.yml

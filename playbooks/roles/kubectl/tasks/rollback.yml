@@ -1,0 +1,19 @@
+- name: Rollback kubectl
+  block:
+    - name: Get kubectl command path
+      shell: "echo `cat $(which k)` | awk '{print $1}' | xargs  dirname  | xargs dirname"
+      register: kubectl_cmd_path
+
+    - name: Echo kubectl command paht
+      debug:
+        msg: "{{ kubectl_cmd_path.stdout }}"
+    
+    - name: Copy kubectl exe
+      copy:
+        remote_src: True
+        src: "{{ kubectl_cmd_path.stdout }}/tools/kubectl.bk"
+        dest: "{{ kubectl_cmd_path.stdout }}/tools/kubectl"
+        mode: 0755
+  # when: (op is defined) and (op == "rollback")
+- name: Check kubectl
+  import_tasks: check.yml

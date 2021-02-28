@@ -1,0 +1,13 @@
+---
+- hosts: k8s_master
+  gather_facts: false
+  tasks:
+    - name: Stop kube-apiserver service
+      include_role:
+        name: common
+        tasks_from: stop-apiserver
+
+    - name: Start kube-apiserver service
+      include_role:
+        name: common
+        tasks_from: start-apiserver

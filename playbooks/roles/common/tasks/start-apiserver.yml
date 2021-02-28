@@ -1,0 +1,10 @@
+- name: Start new kube-apiserver
+  systemd:
+    name: kube-apiserver
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  register: st_apiserver
+  retries: 10
+  delay: 5
+  until: st_apiserver.status.ActiveState == "active"

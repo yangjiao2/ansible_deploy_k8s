@@ -1,0 +1,29 @@
+- name: Force systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Stop and disable process
+  shell: "systemctl stop kube-apiserver kube-controller-manager kube-scheduler ;
+          systemctl disable kube-apiserver kube-controller-manager kube-scheduler"
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "No such file or directory" in shell_result.stderr)
+
+- name: Delete systemd unit files
+  shell: "rm -rf /etc/systemd/system/{kube-apiserver,kube-controller-manager,kube-scheduler}.service"
+
+- name: Delete process files
+  shell: "rm -rf /usr/lib/systemd/system/{kube*,flanneld*}"
+
+- name: Delete journal conf
+  shell: "rm -rf /etc/systemd/journald.conf.d/99-prophet.conf; systemctl restart systemd-journald"
+
+- name: Delete kube-apiserver dir
+  shell: "rm -rf {{ K8S_DIR }}/kube-apiserver"
+- name: Delete kube-controller-manager dir
+  shell: "rm -rf {{ K8S_DIR }}/kube-controller-manager"
+- name: Delete kube-scheduler dir
+  shell: "rm -rf {{ K8S_DIR }}/kube-scheduler"
+
+- name: Force systemd to reread configs
+  systemd:
+    daemon_reload: yes

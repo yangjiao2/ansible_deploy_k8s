@@ -1,0 +1,34 @@
+- name: Etcd backup dir whether exist
+  shell: "ls {{ ETCD_BACKUP_DIR }}"
+  ignore_errors: True
+  register: etcd_backup_dir_status
+
+- name: Echo etcd_backup_dir_status
+  debug:
+    msg: "{{ etcd_backup_dir_status }}"
+- name: Backup etcd
+  block:
+    - name: Create backup dir
+      file:
+        path: "{{ ETCD_BACKUP_DIR }}"
+        state: directory
+        mode: 0755
+    - name: Copy etcdv2backup
+      copy:
+        src: "roles/etcd/files/{{ item }}"
+        dest: "{{ ETCD_BACKUP_DIR }}/{{ item }}"
+        mode: 0755
+      with_items:
+        - etcdv2backup
+        - etcdctl
+    - name: Backup Etcd V3
+      shell: "ETCDCTL_API=3 {{ ETCD_BACKUP_DIR }}/etcdctl --cacert={{ K8S_SSL_DIR }}/ca.pem 
+        --cert={{ K8S_SSL_DIR }}/kubernetes.pem
+        --key={{ K8S_SSL_DIR }}/kubernetes-key.pem
+        --endpoints={{ ETCD_ENDPOINTS }} snapshot save {{ ETCD_BACKUP_DIR }}/{{ snapdb }}"
+    - name: Backup Etcd v2
+      shell: "{{ ETCD_BACKUP_DIR }}/etcdv2backup -etcd-cafile {{ K8S_SSL_DIR }}/ca.pem 
+      -etcd-certfile {{ K8S_SSL_DIR }}/kubernetes.pem
+      -etcd-keyfile {{ K8S_SSL_DIR }}/kubernetes-key.pem
+      -etcd-endpoints {{ ETCD_ENDPOINTS }} -file {{ ETCD_BACKUP_DIR }}/{{ snapdb }}.etcdv2db -action dump"
+  when: (overwrite is defined) and ( (overwrite == "y") or (overwrite == "yes") or (etcd_backup_dir_status.rc != 0) )

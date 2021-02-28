@@ -1,0 +1,67 @@
+---
+
+# 创建 pod 以检查 dns 功能是否正常
+- name: Deploy coredns (Check) | Resolve kube-dns.kube-system
+  block:
+
+    # 删除已有的 network-check deploy
+    - name: Deploy coredns (Check) | Delete existing network-check deployment
+      shell: "/usr/local/bin/kubectl delete deploy network-check || :"
+
+    # 等待删除 network-check 所创建的 pod
+    - name: Deploy coredns (Check) | Wait for terminating network-check pod
+      shell: "/usr/local/bin/kubectl get pod | grep network-check | wc -l"
+      register: pod_number
+      retries: 20
+      delay: 5
+      until: pod_number.stdout == "0"
+
+    # 创建 deploy，镜像使用 import 角色的 prophet_check.yml 文件中拉取的 centos
+    - name: Deploy coredns (Check) | Create deployment centos to check dns
+      shell: "/usr/local/bin/kubectl run network-check --image centos:7 --image-pull-policy IfNotPresent sleep 360000"
+
+    # 获得 pod 名字
+    - name: Deploy coredns (Check) | Get network-check pod name
+      shell: "/usr/local/bin/kubectl get pod | grep network-check | awk '{print $1}'"
+      register: pod_name
+      retries: 20
+      delay: 5
+      until: pod_name.stdout != ""
+
+    # 输出 pod 名字
+    - name: Deploy coredns (Check) | Print network-check pod name
+      debug:
+        msg: "{{ pod_name.stdout }}"
+
+    # 检查 pod 状态
+    - name: Deploy coredns (Check) | Check network-check pod running status
+      shell: "/usr/local/bin/kubectl get pod | grep {{ pod_name.stdout }} | awk '{print $3}'"
+      register: running_status
+      retries: 20
+      delay: 5
+      until: running_status.stdout == "Running"
+
+    # 使用 curl 测试解析功能，如果返回 6 则代表无法解析域名，说明 dns 功能有问题
+    - name: Deploy coredns (Check) | Resolve kube-dns.kube-system in pod
+      shell: "/usr/local/bin/kubectl exec -it  {{ pod_name.stdout }} -- curl kube-dns.kube-system --connect-timeout 3"
+      register: resolve_result
+      retries: 30
+      delay: 5
+      failed_when: resolve_result.rc == 6
+      until: resolve_result.rc != 6
+  
+  # 在 block 块执行失败时执行
+  rescue:
+    - name: Deploy coredns (Check) | Failed to resolve kube-dns.kube-system
+      fail:
+        msg: "Failed to resolve kube-dns.kube-system, please to check kube-dns."
+
+  # 在 block 块中无论是否发生失败都会执行
+  always:
+    # 删除 network-check
+    - name: Deploy coredns (Check) | Delete network-check deployment
+      shell: "/usr/local/bin/kubectl delete deploy network-check"
+      register: shell_result
+      failed_when: not (shell_result.rc == 0 or "NotFound" in shell_result.stderr)
+  tags: 
+    - "status"

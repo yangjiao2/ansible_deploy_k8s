@@ -1,0 +1,12 @@
+---
+- name: Drain node {{ inventory_hostname }}
+  shell: "/usr/local/bin/kubectl drain {{ inventory_hostname }} --delete-local-data --force --ignore-daemonsets"
+  run_once: true
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "NotFound" in shell_result.stderr)
+
+- name: Delete node {{ inventory_hostname }}
+  run_once: true  
+  shell: "/usr/local/bin/kubectl delete node {{ inventory_hostname }}"
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "NotFound" in shell_result.stderr)

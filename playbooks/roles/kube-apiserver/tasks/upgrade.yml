@@ -1,0 +1,73 @@
+- name: Upgrade kube-apiserver
+  block:
+    - name: Mkdir apiserver dir
+      file:
+        path: "{{ K8S_DIR }}/kube-apiserver"
+        state: directory
+        mode: 0755
+
+    - name: Get old apiserver config path
+      shell: "systemctl status kube-apiserver | grep Loaded: | cut -d '(' -f2|cut -d ';' -f1"
+      register: old_config_path
+
+    - name: Copy add_max_stream
+      copy:
+        src: "{{ role_path }}/files/add_max_stream.sh"
+        dest: "{{ K8S_DIR }}/bin/add_max_stream.sh"
+        mode: 0755
+
+    - name: Execute add_max_stream
+      shell: "{{ K8S_DIR }}/bin/add_max_stream.sh {{ K8S_DIR }}/etc/kubernetes/apiserver"
+    - name: debug
+      debug: var=old_config_path.stdout
+
+    - name: Copy kube-apiserver encryption-config.yaml
+      template:
+        src: "roles/kube-master/templates/{{ item }}.j2"
+        dest: "{{ K8S_DIR }}/etc/kubernetes/{{ item }}"
+        mode: 0755
+      with_items:
+        - "encryption-config.yaml"
+    - name: Copy kube-apiserver audit-policy.yaml
+      copy:
+        src: "roles/kube-master/files/audit-policy.yaml"
+        dest: "{{ K8S_DIR }}/etc/kubernetes/audit-policy.yaml"
+        mode: 0755
+
+    - name: Backup apiserver old system unit
+      copy:
+        remote_src: True
+        src: "{{ item }}"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-apiserver.service"
+        mode: 0755
+      with_items:
+        - "{{ old_config_path.stdout }}"
+    - name: Copy new apiserver system unit
+      template:
+        src: "roles/kube-master/templates/kube-apiserver.service.j2"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-apiserver.service.16"
+        mode: 0755
+    - name: Stop kube-apiserver service
+      include_role:
+        name: common
+        tasks_from: stop-apiserver
+    - name: Move backup.sh
+      copy:
+        src: "roles/common/files/backup.sh"
+        dest: "{{ K8S_DIR }}/bin/"
+        mode: 0755
+      
+    - name: Execute whether backup system unit
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ SYSTEMD_CFG_DIR }}/kube-apiserver.service.16 {{ SYSTEMD_CFG_DIR }}/kube-apiserver.service"
+
+    - name: Execute whether backup apiserver
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ K8S_DIR }}/bin/kube-apiserver.16 {{ K8S_DIR }}/bin/kube-apiserver"
+
+    - name: Start kube-apiserver service
+      include_role:
+        name: common
+        tasks_from: start-apiserver
+    
+  # when: (op is not defined) or (op == "upgrade")
+- name: Check kube-apiserver
+  import_tasks: check.yml

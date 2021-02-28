@@ -1,0 +1,93 @@
+- name: Copy kubectl csr json
+  delegate_to: localhost
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ role_path }}/files/{{ item }}"
+  with_items:
+    - "admin-csr.json"
+
+- name: Create prophet k8s command 'k' in remote
+  template:
+    src: templates/k.j2
+    dest: /usr/bin/k
+    mode: 0755
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME != "root" )
+
+- name: Copy kubectl bin
+  copy:
+    src: v1.16.8/kubectl
+    dest: /usr/local/bin
+    mode: 0755
+
+- name: Generate admin cert
+  shell: "roles/cert/bin/cfssl gencert -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem
+  -config roles/cert/files/ca-config.json 
+  -profile=kubernetes roles/kubectl/files/admin-csr.json 
+  | roles/cert/bin/cfssljson -bare roles/kubectl/files/admin"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy admin pem and key
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "admin.pem"
+    - "admin-key.pem"
+
+- name: Generate kubeconfig file | Set cluster
+  shell: "/usr/local/bin/kubectl config set-cluster kubernetes 
+  --certificate-authority={{ K8S_SSL_DIR }}/ca.pem 
+  --embed-certs=true 
+  --server={{ KUBE_APISERVER }} 
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+
+- name: Generate kubeconfig file | Set client credentials
+  shell: "/usr/local/bin/kubectl config set-credentials admin 
+  --client-certificate={{ K8S_SSL_DIR }}/admin.pem 
+  --client-key={{ K8S_SSL_DIR }}/admin-key.pem 
+  --embed-certs=true 
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+
+- name: Generate kubeconfig file | Set context
+  shell: "/usr/local/bin/kubectl config set-context kubernetes 
+  --cluster=kubernetes 
+  --user=admin 
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+
+- name: Generate kubeconfig file | Use context
+  shell: "/usr/local/bin/kubectl config use-context kubernetes 
+  --kubeconfig={{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+
+- name: Copy kube config file root
+  block:
+    - name: Mkdir {{ KUBE_INFO_DIR }}
+      file:
+        path: "~/.kube"
+        state: directory
+        mode: 0755
+
+    - name: Copy kube config file {{ KUBECONF_PATH }}
+      copy:
+        remote_src: True
+        src: "{{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+        dest: "~/{{ KUBECONF_PATH }}"
+        mode: 0755
+
+- name: Copy kube config file {{ DEPLOY_USER_NAME }}
+  block:
+    - name: Mkdir {{ KUBE_INFO_DIR }}
+      file:
+        path: "{{ home_dir }}/.kube"
+        state: directory
+        mode: 0755
+
+    - name: Copy kube config file /home/{{ DEPLOY_USER_NAME }}/{{ KUBECONF_PATH }}
+      copy:
+        remote_src: True
+        src: "{{ K8S_DIR }}/etc/kubernetes/kubectl.kubeconfig"
+        dest: "{{ home_dir }}/{{ KUBECONF_PATH }}"
+        mode: 0755
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME != "root" )

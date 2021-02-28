@@ -1,0 +1,7 @@
+---
+- hosts: k8s_master
+  tasks:
+    - name: Import kube-apiserver | Upgrade
+      include_role:
+        name:  kube-apiserver
+        tasks_from: upgrade

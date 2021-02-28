@@ -1,0 +1,32 @@
+- name: Get kube-apiserver status
+  shell: "systemctl status kube-apiserver |grep 'Active:' | cut -d '(' -f2|cut -d ')' -f1"
+  register: kube_apiserver_status
+
+
+- name: Echo kube-apiserver status
+  debug:
+    msg: "Current apiserver status: {{ kube_apiserver_status.stdout }}"
+
+- name: Check cluster info
+  shell: "{{ KUBECTL_CMD }} cluster-info"
+  register: cluster_info_status
+
+- name: Echo kube-apiserver status
+  debug:
+    msg: "{{ cluster_info_status.stdout_lines|list}}"
+
+- name: Check componentstatuses
+  shell: "{{ KUBECTL_CMD }} get componentstatuses"
+  register: cs_status
+
+- name: Echo componentstatuses status
+  debug:
+    msg: "{{ cs_status.stdout_lines|list }}"
+
+- name: Check apiserver listen port
+  shell: "netstat -lnpt|grep 6443"
+  register: listen_port_status
+
+- name: Echo listen port
+  debug:
+    msg: "{{ listen_port_status.stdout_lines|list }}"

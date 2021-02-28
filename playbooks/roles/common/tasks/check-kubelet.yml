@@ -1,0 +1,34 @@
+- name: Check kubelet status
+  shell: "systemctl status kubelet |grep 'Active:' | cut -d '(' -f2|cut -d ')' -f1"
+  register: kubelet_status
+
+
+- name: Echo kubelet status
+  debug:
+    msg: "Current kubelet status: {{ kubelet_status.stdout }}"
+
+- name: Check kubelet listen port
+  shell: "netstat -nlpt | grep kubelet"
+  register: kubelet_listen_port_status
+
+
+- name: Echo kubelet listen port
+  debug:
+    msg: "{{ kubelet_listen_port_status.stdout_lines|list }}"
+
+- name: Check kubelet metrics
+  shell: "curl -s --cacert {{ K8S_SSL_DIR }}/ca.pem --cert {{ K8S_SSL_DIR }}/admin.pem --key {{ K8S_SSL_DIR }}/admin-key.pem https://{{ ansible_host }}:10250/metrics |head"
+  register: kubelet_metrics_stauts
+
+- name: Echo kubelet meterics
+  debug:
+    msg: "{{ kubelet_metrics_stauts.stdout_lines|list }}"
+
+- name: Check cadvistor metrics
+  shell: "curl -s --cacert {{ K8S_SSL_DIR }}/ca.pem --cert {{ K8S_SSL_DIR }}/admin.pem --key {{ K8S_SSL_DIR }}/admin-key.pem https://{{ ansible_host }}:10250/metrics/cadvisor |head"
+  register: cadvistor_metrics_status
+
+- name: Echo cadvistor metrics
+  debug:
+    msg: "{{ cadvistor_metrics_status.stdout_lines|list }}"
+

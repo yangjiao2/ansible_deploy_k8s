@@ -1,0 +1,52 @@
+- name: Copy template kube-nginx.conf
+  delegate_to: localhost
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ role_path }}/files/{{ item }}"
+  with_items:
+    - "kube-nginx.conf"
+
+- name: Copy template kube-nginx.service
+  template:
+    src: templates/{{ item }}.j2
+    dest: "/etc/systemd/system/{{ item }}"
+  with_items:
+    - "kube-nginx.service"
+      
+- name: Copy compiled nginx bin
+  copy:
+    src: v1.14.0/nginx
+    dest: "{{ K8S_DIR }}/kube-nginx/sbin/kube-nginx"
+    mode: 0755
+
+- name: Copy kube-nginx.conf
+  copy:
+    src: kube-nginx.conf
+    dest: "{{ K8S_DIR }}/kube-nginx/conf/kube-nginx.conf"
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable kube-nginx service
+  systemd:
+    name: kube-nginx
+    enabled: yes
+    masked: no
+
+- name: Restart kube-nginx service
+  systemd:
+    state: restarted
+    name: kube-nginx
+
+- name: Check kube-nginx status
+  shell: "systemctl status kube-nginx |grep 'Active:'"
+  register: kube_nginx_status
+  tags: 
+    - "status"
+
+- name: Echo kube-nginx status
+  debug:
+    msg: "{{ kube_nginx_status.stdout }}"
+  tags: 
+    - "status"

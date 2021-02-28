@@ -1,0 +1,29 @@
+# https://docs.docker.com/engine/api/sdk/examples/
+
+- name: Generate current container json
+  shell: "curl --unix-socket /var/run/docker.sock http:/v1.24/containers/json > {{ K8S_TMP_DIR }}/work/{{ component }}_containers.json"
+
+- name: Copy diff python 
+  template:
+    src: "{{ role_path }}/templates/diff_container.py.j2"
+    dest: "{{ K8S_TMP_DIR }}/work/diff_container.py"
+    mode: 0755
+
+- name: Execute diff python
+  shell: "python {{ K8S_TMP_DIR }}/work/diff_container.py"
+  register: container_info
+
+- name: Echo diff container result
+  debug:
+    msg: "{{ container_info.stdout_lines|list }}"
+
+- name: Pause if container restart
+  pause: 
+    prompt: "container restart please check, click enter to continue"
+  when: container_info.stdout_lines|list|length|int  > 0
+
+- name: Copy container json
+  copy:
+    remote_src: True
+    src: "{{ K8S_TMP_DIR }}/work/{{ component }}_containers.json"
+    dest: "{{ K8S_TMP_DIR }}/work/old_containers.json"

@@ -1,0 +1,9 @@
+- name: Restart flanneld
+  systemd:
+    name: flanneld
+    enabled: yes
+    state: restarted
+  register: st_flanneld
+  retries: 10
+  delay: 3
+  until: st_flanneld.status.ActiveState == "active"

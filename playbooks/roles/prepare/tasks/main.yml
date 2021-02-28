@@ -1,0 +1,154 @@
+- name: Copy 99-prophet.conf
+  delegate_to: localhost
+  template:
+    src: templates/99-prophet.conf.j2
+    dest: "{{ role_path }}/files/99-prophet.conf"
+
+- name: Create user docker
+  user:
+    name: docker
+    shell: /bin/bash
+    password: docker
+
+- name: Set iptables
+  shell: "iptables -F && iptables -X && iptables -F -t nat && iptables -X -t nat && iptables -P FORWARD ACCEPT"
+
+- name: Stop swap
+  shell: "swapoff -a && sed -i '/ swap / s/^\\(.*\\)$/#\\1/g' /etc/fstab "
+
+- name: Modprobe
+  shell: "modprobe ip_vs_rr && modprobe br_netfilter"
+
+- name: Copy /etc/sysctl.d/kubernetes.conf file
+  template:
+    src: roles/prepare/files/kubernetes.conf
+    dest: /etc/sysctl.d/kubernetes.conf
+
+- name: Sysctl kubernetes.conf
+  shell: "sysctl -p /etc/sysctl.d/kubernetes.conf"
+  ignore_errors: true
+
+- name: Set TimeZone
+  shell: "timedatectl set-timezone Asia/Shanghai && timedatectl set-local-rtc 0 && systemctl restart rsyslog  && systemctl restart crond"
+
+- name: Stop useless service
+  shell: "systemctl stop postfix && systemctl disable postfix"
+  ignore_errors: true
+
+- name: Mkdir var docker dir
+  file:
+    path: /var/lib/docker
+    state: directory
+    mode: "0755"
+    owner: "{{ DEPLOY_USER_NAME }}"
+    group: "{{ DEPLOY_USER_NAME }}"
+  when: ( DEPLOY_USER_NAME is defined ) and ( DEPLOY_USER_NAME != "root" )
+
+- name: Mkdir journal dir
+  file:
+    path: /var/log/journal
+    state: directory
+    mode: "0755"
+
+- name: Mkdir journald dir
+  file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Copy 99-prophet.conf
+  template:
+    src: roles/prepare/files/99-prophet.conf
+    dest: /etc/systemd/journald.conf.d/99-prophet.conf 
+
+- name: Restart systemd-journald
+  shell: "systemctl restart systemd-journald"
+
+- name: Mkdir /opt/k8s/work
+  file:
+    path: /opt/k8s/work
+    state: directory
+    mode: "0755"
+
+- name: Delete docker daemon file
+  shell: "rm -rf /etc/docker/daemon.json"
+
+- name: Mkdir kube-nginx dir
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items: 
+    - "{{ K8S_DIR }}/kube-nginx/conf"
+    - "{{ K8S_DIR }}/kube-nginx/logs"
+    - "{{ K8S_DIR }}/kube-nginx/sbin"
+
+- name: Mkdir {{ DOCKER_DIR }}
+  file:
+    path: "{{ DOCKER_DIR }}"
+    state: directory
+    mode: 0755
+
+- name: Mkdir all etcd dir
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items: 
+    - "{{ ETCD_DIR }}"
+    - "{{ ETCD_DIR }}/bin"
+    - "{{ ETCD_DIR }}/etc"
+    - "{{ ETCD_DIR }}/etc/kubernetes"
+    - "{{ ETCD_DIR }}/etc/kubernetes/ssl"
+    - "{{ ETCD_DIR }}/lib"
+    - "{{ ETCD_DIR }}/lib/etcd"
+
+- name: Mkdir all k8s dir
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items: 
+    - "{{ K8S_DIR }}/bin"
+    - "{{ K8S_DIR }}/etc"
+    - "{{ K8S_DIR }}/etc/kubernetes"
+    - "{{ K8S_DIR }}/etc/kubernetes/ssl"
+    - "{{ K8S_DIR }}/etc/kubernetes/ssl/csr"
+    - "{{ K8S_DIR }}/lib"
+    - "{{ K8S_DIR }}/log"
+    - "{{ K8S_DIR }}/lib/kubelet/manifest"
+    
+- name: Mkdir /opt/k8s/bin
+  file:
+    path: /opt/k8s/bin
+    state: directory
+    mode: "0755"
+
+- name: Mkdir /opt/k8s/work
+  file:
+    path: /opt/k8s/work
+    state: directory
+    mode: "0755"
+
+- name: Mkdir /opt/k8s/cert
+  file:
+    path: /opt/k8s/cert
+    state: directory
+    mode: "0755"
+
+- name: Mkdir /etc/kubernetes/cert
+  file:
+    path: /etc/kubernetes/cert
+    state: directory
+    mode: "0755"
+
+- name: Mkdir /etc/etcd/cert
+  file:
+    path: /etc/etcd/cert
+    state: directory
+    mode: "0755"
+
+- name: Install ipvsadm
+  include_role:
+    name: system
+    tasks_from: ipvsadm

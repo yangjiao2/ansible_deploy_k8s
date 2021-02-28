@@ -1,0 +1,7 @@
+- name: Check kubectl
+  shell: "{{ KUBECTL_CMD }} version"
+  register: version_info
+
+- name: Echo check kubectl info
+  debug:
+    msg: "{{ version_info.stdout_lines | list }} "

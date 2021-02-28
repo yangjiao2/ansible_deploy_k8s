@@ -1,0 +1,25 @@
+- name: Get kube-proxy status
+  shell: "systemctl status kube-proxy |grep 'Active:' | cut -d '(' -f2|cut -d ')' -f1"
+  register: kube_proxy_status
+
+
+- name: Echo kube-proxy status
+  debug:
+    msg: "Current proxy status: {{ kube_proxy_status.stdout }}"
+
+- name: Check kube-proxy listen port
+  shell: "netstat -lnpt|grep kube-prox"
+  register: proxy_listen_port
+  retries: 10
+  delay: 10
+  until: proxy_listen_port.rc == 0
+- name: Echo kube-proxy listen port
+  debug:
+    msg: "{{ proxy_listen_port.stdout_lines|list }}"
+
+- name: Check ipvs
+  shell: "ipvsadm -ln | head"
+  register: ipvs_status
+- name: Echo ipvs
+  debug:
+    msg: "{{ ipvs_status.stdout_lines|list }}"

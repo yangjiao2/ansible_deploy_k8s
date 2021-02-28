@@ -1,0 +1,7 @@
+---
+- hosts: k8s_node
+  tasks:
+    - name: Import kube-proxy | Rollback
+      include_role:
+        name:  kube-proxy
+        tasks_from: rollback

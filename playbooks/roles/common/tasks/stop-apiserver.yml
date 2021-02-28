@@ -1,0 +1,5 @@
+- name: Stop old kube-apiserver
+  systemd:
+    name: kube-apiserver
+    enabled: no
+    state: stopped

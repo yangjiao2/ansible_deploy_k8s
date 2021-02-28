@@ -1,0 +1,2 @@
+role_set: kubelet
+role_port: 10250

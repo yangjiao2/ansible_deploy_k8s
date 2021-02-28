@@ -1,0 +1,43 @@
+- name: Copy coredns tar 
+  copy:
+    src: "{{ role_path }}/files/coredns.tar"
+    dest: "/opt/k8s/work/"
+
+- name: Docker load coredns.tar
+  shell: "docker load -i /opt/k8s/work/coredns.tar"
+
+- name: Copy coredns template
+  delegate_to: localhost
+  template:
+    src: templates/coredns.yaml.j2
+    dest: "{{ role_path }}/files/coredns.yaml"
+
+- name: Copy corendns yaml
+  copy:
+    src: "{{ role_path }}/files/coredns.yaml"
+    dest: "/opt/k8s/work/"
+
+- name: Deploy coredns 
+  shell: "/usr/local/bin/kubectl apply -f /opt/k8s/work/coredns.yaml"
+  run_once: true
+
+# # 最后检查
+# - name: Deploy coredns | Include coredns_check.yml
+#   import_tasks: coredns_check.yml
+
+# - name: Backup coredns.yaml 
+#   shell: "cp /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml.base /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml"
+
+# - name: Replace some env in coredns.yaml
+#   shell: 'sed -i -e "s/__PILLAR__DNS__DOMAIN__/{{ CLUSTER_DNS_DOMAIN }}/" -e "s/__PILLAR__DNS__SERVER__/{{ CLUSTER_DNS_SVC_IP }}/" /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml'
+
+# - name: Replace memory env in coredns.yaml
+#   shell: 'sed -i -e "s/__PILLAR__DNS__MEMORY__LIMIT__/170Mi/" /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml'
+
+# - name: Use gcr proxy to pull gcr.io image
+#   shell: 'sed -i -e "s@k8s.gcr.io@{{ GCR_PROXY }}@" /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml' 
+
+# - name: Kubectl create coredns
+#   shell: "/usr/local/bin/kubectl apply -f /opt/k8s/work/kubernetes/cluster/addons/dns/coredns/coredns.yaml"
+#   run_once: true
+

@@ -1,0 +1,13 @@
+---
+- hosts: nodes_to_add
+  gather_facts: false
+  roles:
+    - prepare
+    - download
+    - cert
+    - kube-nginx
+    - kubectl
+    - flannel
+    - docker
+    - kube-node
+    - end

@@ -1,0 +1,5 @@
+{% if (KUBELET_RESOLVE_CONF is defined) and KUBELET_RESOLVE_CONF %}
+{% for item in KUBELET_RESOLVE_CONF %}
+{{ item }}
+{% endfor %}
+{% endif %}

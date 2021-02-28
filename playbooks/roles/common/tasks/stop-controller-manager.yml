@@ -1,0 +1,5 @@
+- name: Stop old kube-controller-manager service
+  systemd:
+    name: kube-controller-manager
+    enabled: no
+    state: stopped

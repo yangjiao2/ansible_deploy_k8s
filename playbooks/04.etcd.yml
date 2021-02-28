@@ -1,0 +1,12 @@
+---
+- hosts: etcd
+  roles:
+#   - backup-etcd
+    - role: etcd
+    #   tags: ["helios"]
+#   - { role: etcd, tags: [ "helios" ] }
+#   - etcd
+#   tasks:
+#   - name: stop etcd service
+#     service: name=etcd state=started
+

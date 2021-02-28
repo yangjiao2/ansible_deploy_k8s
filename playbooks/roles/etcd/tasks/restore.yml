@@ -1,0 +1,30 @@
+
+- name: Stop etcd
+  import_role:
+    name: common
+    tasks_from: stop-etcd
+
+- name: Backup old etcd data
+  copy:
+    remote_src: True
+    src: "{{ ETCD_DIR }}/lib/etcd/" 
+    dest: "{{ ETCD_DIR }}/lib/etcd.{{ cur_time }}" 
+  vars:
+    cur_time: "{{ ansible_date_time.iso8601_basic_short }}"
+- name:  Clean old etcd data
+  shell: "rm -rf {{ ETCD_DIR }}/lib/etcd"
+  ignore_errors: True
+- name: Restore V3 etcd data
+  shell: "ETCDCTL_API=3 {{ ETCD_BACKUP_DIR }}/etcdctl --name {{ ansible_host }} --initial-cluster {{ ETCD_NODES }}
+  --initial-cluster-token etcd-cluster-0 --initial-advertise-peer-urls https://{{ ansible_host }}:2380 
+  --data-dir {{ ETCD_DIR }}/lib/etcd/ snapshot restore {{ ETCD_BACKUP_DIR }}/{{ snapdb }}"
+- name: Restart etcd
+  systemd:
+    state: started
+    name: kube-etcd
+    enabled: True
+- name: Restore etcd v2 data
+  shell: "{{ ETCD_BACKUP_DIR }}/etcdv2backup -etcd-cafile {{ K8S_SSL_DIR }}/ca.pem 
+  -etcd-keyfile {{ ETCD_SSL_DIR }}/etcd-key.pem -etcd-certfile {{ ETCD_SSL_DIR }}/etcd.pem
+  -etcd-endpoints {{ ETCD_ENDPOINTS }}  -file {{ ETCD_BACKUP_DIR }}/{{ snapdb }}.etcdv2db -action restore"
+  run_once: True

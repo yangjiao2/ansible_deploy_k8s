@@ -1,0 +1,5 @@
+---
+- hosts: k8s_cluster
+  max_fail_percentage: 20
+  roles:
+  - download

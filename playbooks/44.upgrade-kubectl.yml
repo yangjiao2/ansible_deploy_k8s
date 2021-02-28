@@ -1,0 +1,9 @@
+---
+- hosts: k8s_master
+  serial: 20%
+  max_fail_percentage: 49
+  tasks:
+    - name: Import kubectl | Upgrade
+      include_role:
+        name:  kubectl
+        tasks_from: upgrade

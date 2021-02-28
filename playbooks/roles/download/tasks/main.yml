@@ -1,0 +1,79 @@
+# 检查 kubernetes 压缩包是否存在和校验和
+- name: get state of kubernetes-server-linux-amd64.tar.gz
+  delegate_to: localhost
+  stat:
+    path: "{{ role_path }}/files/1.16.8/kubernetes-server-linux-amd64@1.16.8.tar.gz"
+    checksum_algorithm: sha256
+  register: st
+
+- name: create dir
+  file:
+    path: /opt/k8s/work/files/1.16.8
+    state: directory
+    mode: '0755'
+
+- name: Set k8s pkg path
+  set_fact:
+    k8s_pkg_path: "/opt/k8s/work/files/1.16.8"
+
+- name: distribute k8s server tar
+  delegate_to: localhost
+  shell: "scp -r {{ item }} root@{{ ansible_host }}:{{ k8s_pkg_path }}"
+  with_items:
+    - "{{ role_path }}/files/1.16.8/kubernetes-server-linux-amd64@1.16.8.tar.gz"
+  when: st.stat.exists == true
+
+- name: download v1.16.8 kubernetes-server
+  # 内网在线安装
+  get_url:
+    url: http://pkg-plus.4paradigm.com/k8s/1.16.8/kubernetes-server-linux-amd64@1.16.8.tar.gz
+    dest: "{{ k8s_pkg_path }}/kubernetes-server-linux-amd64@1.16.8.tar.gz"
+    validate_certs: no
+  when: st.stat.exists == false
+
+- name: Tar zxvf kubernetes-server
+  shell: "cd {{ k8s_pkg_path }} && tar -xzvf kubernetes-server-linux-amd64@1.16.8.tar.gz"
+
+- name: Tar zxvf kubernetes-src
+  shell: "cd {{ k8s_pkg_path }}/kubernetes-server-linux-amd64@1.16.8/kubernetes && tar -zxvf kubernetes-src.tar.gz"
+
+- name: Copy kubernetes bin for install
+  copy:
+    src: "{{ k8s_pkg_path }}/kubernetes-server-linux-amd64@1.16.8/kubernetes/server/bin/{{ item }}"
+    dest: "{{ K8S_DIR }}/bin/"
+    mode: 0755
+  with_items:
+    - apiextensions-apiserver
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-proxy
+    - kube-scheduler
+    - kubeadm
+    - kubectl
+    - kubelet
+    - mounter
+  ignore_errors: true
+  when: (op_way is not defined) or (op_way == "install")
+
+- name: Copy kubernetes bin for upgrade
+  copy:
+    remote_src: True
+    src: "{{ k8s_pkg_path }}/kubernetes-server-linux-amd64@1.16.8/kubernetes/server/bin/{{ item }}"
+    dest: "{{ K8S_DIR }}/bin/{{ item }}.16"
+    mode: 0755
+  with_items:
+    - apiextensions-apiserver
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-proxy
+    - kube-scheduler
+    - kubeadm
+    - kubectl
+    - kubelet
+    - mounter
+  ignore_errors: true
+  when: (op_way is defined) and (op_way == "upgrade")
+
+- name: Chmod u+x {{ K8S_DIR }}/bin
+  shell: "chmod u+x {{ K8S_DIR }}/bin/*"
+

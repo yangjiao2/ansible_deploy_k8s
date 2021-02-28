@@ -1,0 +1,33 @@
+- name: Get kube-scheduler status
+  shell: "systemctl status kube-scheduler |grep 'Active:' | cut -d '(' -f2|cut -d ')' -f1"
+  register: kube_scheduler_status
+
+
+- name: Echo kube-scheduler status
+  debug:
+    msg: "Current scheduler status: {{ kube_scheduler_status.stdout }}"
+
+- name: Check scheduer listen port
+  shell: "netstat -lnpt |grep kube-sch"
+  register: scheduler_listem_port_status
+
+- name: Echo scheduler listen port
+  debug:
+    msg: "{{ scheduler_listem_port_status.stdout_lines|list }}"
+
+- name: Check schduler metrics
+  shell: "curl -s --cacert {{ K8S_SSL_DIR }}/ca.pem --cert {{ K8S_SSL_DIR }}/admin.pem --key {{ K8S_SSL_DIR }}/admin-key.pem https://{{ ansible_host }}:10259/metrics |head"
+  register: schduler_metrics_stauts
+
+- name: Echo scheduler metrics
+  debug:
+    msg: "{{ schduler_metrics_stauts.stdout_lines|list }}"
+
+- name: Check scheduler leader
+  shell: "{{ KUBECTL_CMD }} get endpoints kube-scheduler --namespace=kube-system  -o yaml"
+  register: scheduler_leader_status
+  until: scheduler_leader_status.rc == 0
+
+- name: Echo scheduler leader
+  debug:
+    msg: "{{ scheduler_leader_status.stdout_lines|list }}"

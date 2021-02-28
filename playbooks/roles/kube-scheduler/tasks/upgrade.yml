@@ -1,0 +1,140 @@
+- name: Upgrade kube-scheduler
+  block:
+  - name: Mkdir scheduler dir
+    file:
+      path: "{{ K8S_DIR }}/kube-scheduler"
+      state: directory
+      mode: 0755
+
+  - name: Get old scheduler system unit path
+    shell: "systemctl status kube-scheduler | grep Loaded: | cut -d '(' -f2|cut -d ';' -f1"
+    register: old_config_path
+
+
+  - name: debug
+    debug: var=old_config_path.stdout
+
+  - name: Copy kube-scheduler-csr.json kube-scheduler.yaml
+    template:
+      src: "roles/kube-master/templates/{{ item }}.j2"
+      dest: "{{ role_path }}/files/{{ item }}"
+    with_items:
+      - kube-scheduler-csr.json
+      - kube-scheduler.yaml
+    delegate_to: localhost
+    run_once: true
+
+  - name: Copy kube-scheduler.yaml
+    copy:
+      src: "{{ role_path }}/files/kube-scheduler.yaml"
+      dest: "{{ K8S_DIR }}/etc/kubernetes/kube-scheduler.yaml"
+
+  - name: Pull ca info
+    fetch: 
+      src: "{{ K8S_DIR }}/etc/kubernetes/ssl/{{ item }}"
+      flat: yes
+      dest: "roles/cert/files/"
+      validate_checksum: no
+    with_items:
+      - ca.pem
+      - ca-key.pem
+      - ca-config.json
+    run_once: true
+
+  - name: Generate kube-scheduler certificate
+    shell: "roles/cert/bin/cfssl gencert 
+    -ca=roles/cert/files/ca.pem 
+    -ca-key=roles/cert/files/ca-key.pem 
+    -config=roles/cert/files/ca-config.json
+    -profile=kubernetes roles/kube-scheduler/files/kube-scheduler-csr.json | 
+    roles/cert/bin/cfssljson -bare roles/kube-scheduler/files/kube-scheduler"
+    delegate_to: localhost
+    run_once: true
+
+
+  - name: Generate kube-scheduler kubeconfig file | Set cluster
+    shell: "roles/kubectl/files/v1.16.8/kubectl config set-cluster kubernetes 
+    --certificate-authority=roles/cert/files/ca.pem 
+    --embed-certs=true 
+    --server={{ KUBE_APISERVER }} 
+    --kubeconfig=roles/kube-scheduler/files/kube-scheduler.kubeconfig"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Generate kube-scheduler file | Set client credentials
+    shell: "roles/kubectl/files/v1.16.8/kubectl config set-credentials system:kube-scheduler   
+    --client-certificate=roles/kube-scheduler/files/kube-scheduler.pem 
+    --client-key=roles/kube-scheduler/files/kube-scheduler-key.pem 
+    --embed-certs=true 
+    --kubeconfig=roles/kube-scheduler/files/kube-scheduler.kubeconfig"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Generate kube-scheduler file | Set context
+    shell: "roles/kubectl/files/v1.16.8/kubectl config set-context system:kube-scheduler   
+    --cluster=kubernetes 
+    --user=system:kube-scheduler  
+    --kubeconfig=roles/kube-scheduler/files/kube-scheduler.kubeconfig"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Generate kube-scheduler file | Use context
+    shell: "roles/kubectl/files/v1.16.8/kubectl config use-context system:kube-scheduler 
+    --kubeconfig=roles/kube-scheduler/files/kube-scheduler.kubeconfig"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Copy kube-scheduler.kubeconfig file
+    copy:
+      src: kube-scheduler.kubeconfig
+      dest: "{{ K8S_DIR }}/etc/kubernetes/kube-scheduler.kubeconfig"
+      mode: 0755
+
+  - name: Copy kube-scheduler client credentials
+    copy:
+      src: "{{ item }}"
+      dest: "{{ K8S_DIR }}/etc/kubernetes/ssl/{{ item }}"
+      mode: 0755
+    with_items:
+      - kube-scheduler-key.pem
+      - kube-scheduler.pem
+
+  - name: Copy kube-scheduler system unit 
+    template:
+      src: "roles/kube-master/templates/{{ item }}.j2"
+      dest: "{{ SYSTEMD_CFG_DIR }}/{{ item }}.16"
+    with_items:
+      - "kube-scheduler.service"
+  - name: Backup scheduler old system unit
+    copy:
+      remote_src: True
+      src: "{{ item }}"
+      dest: "{{ SYSTEMD_CFG_DIR }}/kube-scheduler.service"
+      mode: 0755
+    with_items:
+      - "{{ old_config_path.stdout }}"
+
+  - name: Stop kube-scheduler service
+    include_role:
+      name: common
+      tasks_from: stop-scheduler
+  - name: Move backup.sh
+    copy:
+      src: "roles/common/files/backup.sh"
+      dest: "{{ K8S_DIR }}/bin/"
+      mode: 0755
+
+  - name: Execute whether backup system unit
+    shell: "{{ K8S_DIR }}/bin/backup.sh {{ SYSTEMD_CFG_DIR }}/kube-scheduler.service.16 {{ SYSTEMD_CFG_DIR }}/kube-scheduler.service"
+
+  - name: Execute whether backup scheduler
+    shell: "{{ K8S_DIR }}/bin/backup.sh {{ K8S_DIR }}/bin/kube-scheduler.16 {{ K8S_DIR }}/bin/kube-scheduler"
+
+  - name: Start kube-scheduler service
+    include_role:
+      name: common
+      tasks_from: start-scheduler
+
+  # when: (op is not defined) or (op == "upgrade")
+- name: Check kube-scheduler
+  import_tasks: check.yml

@@ -1,0 +1,63 @@
+- name: Copy system unit
+  template:
+    src: templates/{{ item }}.j2
+    dest: /etc/systemd/system/{{ item }}
+  with_items:
+    - "docker.service"
+
+- name: Copy docker binary file
+  copy:
+    src: "{{ item }}"
+    dest: "/usr/bin/"
+    mode: 0755
+  with_fileglob:
+    - "v1.18.09.8/*"
+    
+- name: Iptables FORWARD chain ACCEPT
+  shell: "iptables -P FORWARD ACCEPT"
+
+- name: Iptables /etc/rc.local
+  shell: "iptables -P FORWARD ACCEPT"
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable docker service
+  systemd:
+    name: docker
+    enabled: yes
+    masked: no
+
+- name: Restart docker service
+  systemd:
+    state: restarted
+    name: docker
+
+- name: Get docker status
+  shell: "systemctl status docker |grep 'Active:'"
+  register: docker_status
+  tags: 
+    - "status"
+
+- name: Echo docker status
+  debug:
+    msg: "{{ docker_status.stdout }}"
+  tags: 
+    - "status"
+
+- name: Get docker0 and flannel.1
+  shell: "ip addr show flannel.1 && ip addr show docker0"
+  register: docker0_flannel_1
+  retries: 10
+  delay: 3
+  until: docker0_flannel_1.rc == 0
+  tags: 
+    - "status"
+
+- name: Echo docker0 and flannel.1
+  debug:
+    msg: "{{ docker0_flannel_1.stdout }}"
+  tags: 
+    - "status"
+

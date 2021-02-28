@@ -1,0 +1,88 @@
+---
+- hosts: etcd_to_delete
+  gather_facts: false
+  tasks:
+    - name: Check etcd cluster status
+      delegate_to: localhost
+      shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl 
+          -w table 
+          --cacert={{ K8S_SSL_DIR }}/ca.pem
+          --cert={{ ETCD_SSL_DIR }}/etcd.pem
+          --key={{ ETCD_SSL_DIR }}/etcd-key.pem 
+          --endpoints={{ OLD_ETCD_ENDPOINTS }}
+          endpoint status"
+      register: shell_result
+
+    - name: Print etcd cluster status
+      debug:
+        msg: "{{ shell_result.stdout }}"
+        
+    - name: Get etcd member list
+      delegate_to: localhost
+      shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl 
+          --cacert={{ K8S_SSL_DIR }}/ca.pem
+          --cert={{ ETCD_SSL_DIR }}/etcd.pem
+          --key={{ ETCD_SSL_DIR }}/etcd-key.pem 
+          --endpoints={{ OLD_ETCD_ENDPOINTS }}
+          member list 2>/dev/null
+          | grep {{ ansible_host }}
+          | awk -F ',' '{print $1}'
+          | head -1"
+      register: delete_id
+
+    - name: Show etcd node id
+      debug:
+        msg: "{{ delete_id.stdout }}"
+      failed_when: delete_id.stdout == ""
+
+    - name: Delete etcd node
+      delegate_to: localhost
+      shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl 
+          --cacert={{ K8S_SSL_DIR }}/ca.pem
+          --cert={{ ETCD_SSL_DIR }}/etcd.pem
+          --key={{ ETCD_SSL_DIR }}/etcd-key.pem 
+          --endpoints={{ OLD_ETCD_ENDPOINTS }}
+          member remove {{ delete_id.stdout }}"
+
+- hosts: etcd_to_delete
+  gather_facts: false
+  roles:
+    - clean-etcd
+
+- hosts: k8s_master
+  gather_facts: false
+  tasks:
+    - name: Print OLD_ETCD_ENDPOINTS and ETCD_ENDPOINTS
+      debug:
+        msg: "OLD_ETCD_ENDPOINTS: {{ OLD_ETCD_ENDPOINTS }}, ETCD_ENDPOINTS:{{ ETCD_ENDPOINTS }}"
+
+    - name: Modify etcd-server in kube-apiserver system unit
+      shell: "sed -i 's#{{ OLD_ETCD_ENDPOINTS }}#{{ ETCD_ENDPOINTS }}#g' /etc/systemd/system/kube-apiserver.service"
+
+    - name: Reload and restart kube-apiserver
+      shell: "systemctl daemon-reload && systemctl restart kube-apiserver"
+
+    - name: Get kubernetes etcd status
+      shell: "/usr/local/bin/kubectl get cs --no-headers | grep etcd"
+      register: shell_result
+      retries: 10
+      delay: 3
+      until: shell_result.rc == 0
+
+    - name: Echo kubernetes etcd status
+      debug:
+        msg: "{{ shell_result.stdout }}"
+    - name: Copy master component service
+      template:
+        src: "roles/kube-master/templates/{{ item }}.j2"
+        dest: /etc/systemd/system/{{ item }}
+        mode: 0755
+      with_items:
+        - "kube-apiserver.service"
+
+    - name: Reload kube-apiserver
+      systemd:
+        name: kube-apiserver
+        enabled: yes
+        state: restarted
+        daemon_reload: yes

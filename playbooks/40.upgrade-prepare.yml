@@ -1,0 +1,21 @@
+---
+- hosts: k8s_cluster
+  tasks:
+  - name: Mkdir k8s tmp dir
+    file:
+      path: "{{ K8S_TMP_DIR }}/{{ item }}"
+      state: directory
+    with_items:
+      - work
+      - bin
+  - name: Save current Container info
+    shell: "curl --unix-socket /var/run/docker.sock http:/v1.24/containers/json > {{ K8S_TMP_DIR }}/work/old_containers.json"
+
+  - name: Add Bind role For apiserver
+    shell: "{{ KUBECTL_CMD }} create clusterrolebinding kube-apiserver:kubelet-apis --clusterrole=system:kubelet-api-admin --user kubernetes"
+    run_once: true
+    ignore_errors: true
+  
+  # - name: 
+
+

@@ -1,0 +1,7 @@
+---
+- hosts: k8s_node
+  tasks:
+    - name: Restart flanneld
+      include_role:
+        name: common
+        tasks_from: restart-flanneld

@@ -1,0 +1,14 @@
+---
+- hosts: masters_to_add
+  gather_facts: false
+  roles:
+    - prepare
+    - download
+    - cert
+    - kube-nginx
+    - kube-master 
+
+- hosts: k8s_cluster
+  gather_facts: false
+  roles:
+    - kube-nginx

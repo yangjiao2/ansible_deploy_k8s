@@ -1,0 +1,4 @@
+- name: Clean iptables Rules
+  shell: "iptables -F &&  iptables -X &&  iptables -F -t nat &&  iptables -X -t nat"
+- name: Clean ipvs Ruls
+  shell: "ipvsadm -C"

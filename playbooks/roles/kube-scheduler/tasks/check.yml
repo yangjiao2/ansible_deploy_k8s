@@ -1,0 +1,10 @@
+- name: Check kube-scheduler
+  import_role:
+    name: common
+    tasks_from: check-scheduler
+- name: Check whether container restart
+  import_role:
+    name: common
+    tasks_from: check-container
+  vars:
+    component: scheduler

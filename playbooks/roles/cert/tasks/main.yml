@@ -1,0 +1,18 @@
+- name: Generate ca cert
+  shell: "roles/cert/bin/cfssl gencert -initca roles/cert/files/ca-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/cert/files/ca"
+  delegate_to: localhost
+  run_once: true
+  tags:
+    - "init"
+
+- name: Copy ca files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "ca-config.json"
+    - "ca-key.pem"
+    - "ca.csr"
+    - "ca.pem"

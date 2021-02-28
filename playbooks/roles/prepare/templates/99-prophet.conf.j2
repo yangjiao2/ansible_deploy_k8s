@@ -1,0 +1,18 @@
+[Journal]
+# 持久化保存到磁盘
+Storage=persistent
+
+# 压缩历史日志
+Compress=yes
+
+# 日志占用磁盘空间限额
+SystemMaxUse={{ journald_max_disk_size }}
+
+# 单日志文件大小，超限后会被切割
+SystemMaxFileSize={{ journald_max_file_size }}
+
+# 日志保存时间
+MaxRetentionSec={{ journald_retention_period }}
+
+# 是否将日志转发到 syslog
+ForwardToSyslog={{ journald_forward_syslog }}

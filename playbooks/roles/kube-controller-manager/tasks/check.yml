@@ -1,0 +1,10 @@
+- name: Check kube-controller-manager
+  import_role:
+    name: common
+    tasks_from: check-controller-manager
+- name: Check whether container restart
+  import_role:
+    name: common
+    tasks_from: check-container
+  vars:
+    component: controller-manager

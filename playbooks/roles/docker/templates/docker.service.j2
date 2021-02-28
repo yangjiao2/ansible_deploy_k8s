@@ -1,0 +1,28 @@
+[Unit]
+Description=Docker Application Container Engine
+Documentation=http://docs.docker.io
+
+[Service]
+EnvironmentFile=-/run/flannel/docker
+ExecStart=/usr/bin/dockerd $DOCKER_NETWORK_OPTIONS \
+  {% for registry in DOCKER_REGISTRYS %}
+  --insecure-registry={{ registry }} \
+  {% endfor %}
+  --insecure-registry=docker02:35000 \
+  --live-restore \
+  --data-root={{ DOCKER_DIR }} \
+  --log-opt max-size=512m \
+  --log-opt max-file=2 \
+  --max-concurrent-downloads=10 \
+  --max-concurrent-uploads=10
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+Delegate=yes
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

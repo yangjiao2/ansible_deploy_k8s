@@ -1,0 +1,10 @@
+---
+- hosts: masters_to_delete
+  gather_facts: false
+  roles:
+    - clean-master
+
+- hosts: k8s_cluster:!masters_to_delete
+  gather_facts: false
+  roles:
+    - kube-nginx

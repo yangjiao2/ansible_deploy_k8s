@@ -1,0 +1,5 @@
+- name: Stop old etcd
+  systemd:
+    name: kube-etcd
+    enabled: no
+    state: stopped

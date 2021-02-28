@@ -1,0 +1,28 @@
+- name: Rollback etcd
+  block: 
+    - name: Stop etcd service
+      include_role:
+        name: common
+        tasks_from: stop-etcd
+    - name: Copy etcd and etcdctl
+      copy:
+        remote_src: True
+        src: "{{ ETCD_DIR }}/bin/{{ item }}.bk"
+        dest: "{{ ETCD_DIR }}/bin/{{ item }}"
+      with_items:
+        - etcd
+        - etcdctl
+      ignore_errors: true
+      
+    - name: Copy etcd system unit
+      copy:
+        remote_src: True
+        src: "{{ SYSTEMD_CFG_DIR }}/kube-etcd.service.bk"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-etcd.service"
+    - name: restore etcd data
+      import_tasks: restore.yml
+  # when: (op is defined) and (op == "rollback")
+- name: Check etcd
+  import_role:
+    name: common
+    tasks_from: check-etcd

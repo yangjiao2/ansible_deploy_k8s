@@ -1,0 +1,60 @@
+---
+- hosts: etcd_to_add
+  gather_facts: false
+  tasks:
+    - name: Check etcd cluster status
+      delegate_to: localhost
+      shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl 
+          -w table 
+          --cacert={{ K8S_SSL_DIR }}/ca.pem
+          --cert={{ ETCD_SSL_DIR }}/etcd.pem
+          --key={{ ETCD_SSL_DIR }}/etcd-key.pem 
+          --endpoints={{ OLD_ETCD_ENDPOINTS }}
+          endpoint status"
+      register: shell_result
+
+    - name: Print etcd cluster status
+      debug:
+        msg: "{{ shell_result.stdout }}"
+        
+    - name: Add etcd node from existing node
+      delegate_to: localhost
+      shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl 
+          --cacert={{ K8S_SSL_DIR }}/ca.pem
+          --cert={{ ETCD_SSL_DIR }}/etcd.pem
+          --key={{ ETCD_SSL_DIR }}/etcd-key.pem 
+          --endpoints={{ OLD_ETCD_ENDPOINTS }}
+          member add {{ ansible_host }}
+          --peer-urls=https://{{ ansible_host }}:2380"
+
+- hosts: etcd_to_add
+  gather_facts: false
+  roles:
+    - prepare
+    - cert
+    - etcd
+  vars:
+    CLUSTER_STATE: existing
+
+- hosts: k8s_cluster
+  gather_facts: false
+  tasks:
+    - name: Modify etcd-server in kube-apiserver system unit
+      shell: "sed -i 's#{{ OLD_ETCD_ENDPOINTS }}#{{ ETCD_ENDPOINTS }}#g' /etc/systemd/system/kube-apiserver.service"
+
+    - name: Reload and restart kube-apiserver
+      shell: "systemctl daemon-reload && systemctl restart kube-apiserver"
+
+    - name: Get kubernetes etcd status
+      shell: "/usr/local/bin/kubectl get cs --no-headers | grep etcd"
+      register: shell_result
+      retries: 10
+      delay: 3
+      until: shell_result.rc == 0
+
+    - name: Echo kubernetes etcd status
+      debug:
+        msg: "{{ shell_result.stdout }}"
+ 
+      
+  

@@ -1,0 +1,19 @@
+import json
+
+
+def diff_container():
+    old_container_arr = {}
+    cur_container_arr = {}
+
+    with open("{{ K8S_TMP_DIR }}/work/old_containers.json") as f:
+        old_container_arr = json.loads(f.read())
+    with open("{{ K8S_TMP_DIR }}/work/{{ component }}_containers.json") as f:
+        new_container_arr = json.loads(f.read())
+    for item in old_container_arr:
+        if item.get("Id") in [x.get("Id") for x in new_container_arr]:
+            continue
+        print("---- {} Restart-----".format(item.get("Names")))
+        print("container {} restart \n imageId is {}".format(item.get("Id"), item.get("ImageID")))
+
+
+diff_container()

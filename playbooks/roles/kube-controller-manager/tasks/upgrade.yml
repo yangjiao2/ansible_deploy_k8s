@@ -1,0 +1,132 @@
+- name: Upgrade controller manager
+  block:
+    - name: Mkdir controller-manager dir
+      file:
+        path: "{{ K8S_DIR }}/kube-controller-manager"
+        state: directory
+        mode: 0755
+
+    - name: Get old controller-manager config path
+      shell: "systemctl status kube-controller-manager | grep Loaded: | cut -d '(' -f2|cut -d ';' -f1"
+      register: old_config_path
+
+    - name: Copy kube-controller-manager csr 
+      template:
+        src: roles/kube-master/templates/{{ item }}.j2
+        dest: "{{ role_path }}/files/{{ item }}"
+      with_items:
+        - "kube-controller-manager-csr.json"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Pull ca info
+      fetch: 
+        src: "{{ K8S_DIR }}/etc/kubernetes/ssl/{{ item }}"
+        flat: yes
+        dest: "roles/cert/files/"
+        validate_checksum: no
+      with_items:
+        - ca.pem
+        - ca-key.pem
+        - ca-config.json
+      run_once: true
+
+    - name: Generate kube-controller-manager certificate
+      shell: "roles/cert/bin/cfssl gencert 
+      -ca=roles/cert/files/ca.pem 
+      -ca-key=roles/cert/files/ca-key.pem 
+      -config=roles/cert/files/ca-config.json
+      -profile=kubernetes roles/kube-controller-manager/files/kube-controller-manager-csr.json | 
+      roles/cert/bin/cfssljson -bare roles/kube-master/files/kube-controller-manager"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Copy kube-controller-manager pem and key
+      copy:
+        src: "roles/kube-master/files/{{ item }}"
+        dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+        mode: 0755
+      with_items:
+        - "kube-controller-manager.pem"
+        - "kube-controller-manager-key.pem"
+
+    - name: Generate kube-controller-manager kubeconfig file | Set cluster
+      shell: "roles/kubectl/files/v1.16.8/kubectl config set-cluster kubernetes 
+      --certificate-authority=roles/cert/files/ca.pem 
+      --embed-certs=true 
+      --server={{ KUBE_APISERVER }} 
+      --kubeconfig=roles/kube-controller-manager/files/kube-controller-manager.kubeconfig"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate kube-controller-manager file | Set client credentials
+      shell: "roles/kubectl/files/v1.16.8/kubectl config set-credentials system:kube-controller-manager  
+      --client-certificate=roles/kube-master/files/kube-controller-manager.pem 
+      --client-key=roles/kube-master/files/kube-controller-manager-key.pem 
+      --embed-certs=true 
+      --kubeconfig=roles/kube-controller-manager/files/kube-controller-manager.kubeconfig"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate kube-controller-manager file | Set context
+      shell: "roles/kubectl/files/v1.16.8/kubectl config set-context system:kube-controller-manager  
+      --cluster=kubernetes 
+      --user=system:kube-controller-manager  
+      --kubeconfig=roles/kube-controller-manager/files/kube-controller-manager.kubeconfig"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Generate kube-controller-manager file | Use context
+      shell: "roles/kubectl/files/v1.16.8/kubectl config use-context system:kube-controller-manager  
+      --kubeconfig=roles/kube-controller-manager/files/kube-controller-manager.kubeconfig"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Copy kube-controller-manager.kubeconfig file
+      copy:
+        src: "kube-controller-manager.kubeconfig"
+        dest: "{{ K8S_DIR }}/etc/kubernetes/kube-controller-manager.kubeconfig"
+        mode: 0755
+
+    - name: Copy new kube-controller-manager system unit
+      template:
+        src: roles/kube-master/templates/{{ item }}.j2
+        dest: "{{ SYSTEMD_CFG_DIR }}/{{ item }}.16"
+      with_items:
+        - "kube-controller-manager.service"
+
+
+    - name: Backup controller-manager system unit
+      copy:
+        remote_src: True
+        src: "{{ item }}"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-controller-manager.service"
+        mode: 0755
+      with_items:
+        - "{{ old_config_path.stdout }}"
+    - name: Stop kube-controller-manager service
+      include_role:
+        name: common
+        tasks_from: stop-controller-manager
+    - name: Move backup.sh
+      copy:
+        src: "roles/common/files/backup.sh"
+        dest: "{{ K8S_DIR }}/bin/"
+        mode: 0755
+
+    - name: Execute whether backup system unit
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ SYSTEMD_CFG_DIR }}/kube-controller-manager.service.16 {{ SYSTEMD_CFG_DIR }}/kube-controller-manager.service"
+
+
+    - name: Execute whether backup controller-manager
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ K8S_DIR }}/bin/kube-controller-manager.16 {{ K8S_DIR }}/bin/kube-controller-manager"
+    
+    - name: Start kube-controller-manager service
+      include_role:
+        name: common
+        tasks_from: start-controller-manager
+
+  # when: (op is not defined) or (op == "upgrade")
+
+- name: Check kube-controller-manager
+  import_tasks: check.yml

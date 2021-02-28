@@ -1,0 +1,10 @@
+- name: Start kube-scheduler
+  systemd:
+    name: kube-scheduler
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  register: st_scheduler
+  retries: 10
+  delay: 3
+  until: st_scheduler.status.ActiveState == "active"

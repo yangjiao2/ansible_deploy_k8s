@@ -1,0 +1,6 @@
+---
+- hosts: nodes_to_delete
+  gather_facts: false
+  roles:
+    - delete-node
+    - clean-node

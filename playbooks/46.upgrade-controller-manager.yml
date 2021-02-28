@@ -1,0 +1,15 @@
+---
+- hosts: k8s_master
+  gather_facts: yes
+  tasks:
+  #   - name: aaa
+  #     debug: 
+  #       msg: "dsdsds"
+  #   - name: pasuse
+  #     pause: 
+  #       prompt: "Unexpected OS"
+  #       private: yes
+    - name: Import kube-controller-manager | Upgrade
+      include_role:
+        name: kube-controller-manager
+        tasks_from: upgrade

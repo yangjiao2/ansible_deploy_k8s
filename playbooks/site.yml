@@ -1,0 +1,14 @@
+---
+- include: 01.prepare.yml
+- include: 02.download.yml
+- include: 03.cert.yml
+- include: 04.etcd.yml
+- include: 05.kubectl.yml
+- include: 06.kube-nginx.yml
+- include: 07.kube-master.yml
+- include: 08.flannel.yml
+- include: 09.docker.yml
+- include: 10.kube-node.yml
+- include: 11.coredns.yml
+- include: 12.dashboard.yml
+- include: 13.end.yml

@@ -1,0 +1,5 @@
+- name: Stop old kubelet service
+  systemd:
+    name: kubelet
+    enabled: no
+    state: stopped

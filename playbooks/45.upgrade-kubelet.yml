@@ -1,0 +1,9 @@
+---
+- hosts: k8s_node
+  serial: 20%
+  max_fail_percentage: 49
+  tasks:
+    - name: Import kubelet | Upgrade
+      include_role:
+        name:  kubelet
+        tasks_from: upgrade

@@ -1,0 +1,337 @@
+#######################################
+# 拷贝 kube-apiserver， kube-controller-manager, kube-scheduler 的 csr 和 system 配置文件
+#######################################
+- name: Copy master component csr 
+  delegate_to: localhost
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ role_path }}/files/{{ item }}"
+  with_items:
+    - "encryption-config.yaml"
+    - "kubernetes-csr.json"
+    - "proxy-client-csr.json"
+    - "kube-controller-manager-csr.json"
+    - "kube-scheduler-csr.json"
+    - "kube-scheduler.yaml"
+  
+- name: Copy master component service
+  template:
+    src: templates/{{ item }}.j2
+    dest: /etc/systemd/system/{{ item }}
+  with_items:
+    - "kube-apiserver.service"
+    - "kube-controller-manager.service"
+    - "kube-scheduler.service"
+
+#######################################
+# kube-apiserver
+#######################################
+- name: Mkdir apiserver dir
+  file:
+    path: "{{ K8S_DIR }}/kube-apiserver"
+    state: directory
+    mode: 0755
+
+- name: Copy kube-apiserver file
+  template:
+    src: "files/{{ item }}"
+    dest: "{{ K8S_DIR }}/etc/kubernetes/{{ item }}"
+    mode: 0755
+  with_items:
+    - "audit-policy.yaml"
+    - "encryption-config.yaml"
+    - "kube-scheduler.yaml"
+    - "kubelet-api-admin.yaml"
+    - "token.csv"
+
+- name: Generate apiserver certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/kube-master/files/kubernetes-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/kube-master/files/kubernetes "
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate proxy-client certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/kube-master/files/proxy-client-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/kube-master/files/proxy-client "
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy apiserver pem
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "kubernetes.pem"
+    - "kubernetes-key.pem"
+    - "proxy-client.pem"
+    - "proxy-client-key.pem"
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable kube-apiserver service
+  systemd:
+    name: kube-apiserver
+    enabled: yes
+    masked: no
+
+- name: Restart kube-apiserver service
+  systemd:
+    state: restarted
+    name: kube-apiserver
+  register: st_apiserver
+  retries: 10
+  delay: 3
+  until: st_apiserver.status.ActiveState == "active"
+
+- name: Get kube-apiserver status
+  shell: "systemctl status kube-apiserver |grep 'Active:'"
+  register: kube_apiserver_status
+  tags: 
+    - "status"
+
+- name: Echo kube-apiserver status
+  debug:
+    msg: "{{ kube_apiserver_status.stdout }}"
+  tags: 
+    - "status"
+
+
+# - name: Get kube-apiserver etcd data
+#   shell: "ETCDCTL_API=3 {{ ETCD_DIR }}/bin/etcdctl --endpoints={{ ETCD_ENDPOINTS }} --cacert={{ K8S_SSL_DIR }}/ca.pem --cert={{ ETCD_SSL_DIR }}/etcd.pem --key={{ ETCD_SSL_DIR }}/etcd-key.pem get /registry/ --prefix --keys-only"
+#   register: etcd_kube_apiserver_data
+#   retries: 10
+#   delay: 3
+#   until: etcd_kube_apiserver_data.rc == 0
+#   tags:
+#     - "init"
+
+# - name: Echo etcd kube-apiserver data
+#   debug:
+#     msg: "{{ etcd_kube_apiserver_data.stdout }}"
+#   tags:
+#     - "init"
+
+- name: Kubectl apply -f kubelet-api-admin.yaml
+  shell: "/usr/local/bin/kubectl apply -f {{ K8S_DIR }}/etc/kubernetes/kubelet-api-admin.yaml"
+  run_once: true
+  register: shell_result
+  retries: 10
+  delay: 3
+  until: shell_result.rc == 0
+  tags:
+    - "init"
+
+- name: Grant kube-apiserver rbac to access kubelet api
+  shell: "/usr/local/bin/kubectl create clusterrolebinding kube-apiserver:kubelet-apis --clusterrole=system:kubelet-api-admin --user kubernetes"
+  run_once: true
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "AlreadyExists" in shell_result.stderr)
+  tags:
+    - "init"
+
+#######################################
+# controller-manager
+#######################################
+
+- name: Mkdir controller-manager dir
+  file:
+    path: "{{ K8S_DIR }}/kube-controller-manager"
+    state: directory
+    mode: 0755
+
+- name: Generate kube-controller-manager certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/kube-master/files/kube-controller-manager-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/kube-master/files/kube-controller-manager"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-controller-manager pem and key
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "kube-controller-manager.pem"
+    - "kube-controller-manager-key.pem"
+
+- name: Generate kube-controller-manager kubeconfig file | Set cluster
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-cluster kubernetes 
+  --certificate-authority=roles/cert/files/ca.pem 
+  --embed-certs=true 
+  --server={{ KUBE_APISERVER }} 
+  --kubeconfig=roles/kube-master/files/kube-controller-manager.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-controller-manager file | Set client credentials
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-credentials system:kube-controller-manager  
+  --client-certificate=roles/kube-master/files/kube-controller-manager.pem 
+  --client-key=roles/kube-master/files/kube-controller-manager-key.pem 
+  --embed-certs=true 
+  --kubeconfig=roles/kube-master/files/kube-controller-manager.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-controller-manager file | Set context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-context system:kube-controller-manager  
+  --cluster=kubernetes 
+  --user=system:kube-controller-manager  
+  --kubeconfig=roles/kube-master/files/kube-controller-manager.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-controller-manager file | Use context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config use-context system:kube-controller-manager  
+  --kubeconfig=roles/kube-master/files/kube-controller-manager.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-controller-manager.kubeconfig file
+  copy:
+    src: "{{ role_path }}/files/kube-controller-manager.kubeconfig"
+    dest: "{{ K8S_DIR }}/etc/kubernetes/kube-controller-manager.kubeconfig"
+    mode: 0755
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable kube-controller-manager service
+  systemd:
+    name: kube-controller-manager
+    enabled: yes
+    masked: no
+
+- name: Restart kube-controller-manager service
+  systemd:
+    state: restarted
+    name: kube-controller-manager
+
+- name: Get kube-controller-manager status
+  shell: "systemctl status kube-controller-manager |grep 'Active:'"
+  register: kube_controller_manager_status
+  tags: 
+    - "status"
+
+- name: Echo kube-controller-manager 
+  debug:
+    msg: "{{ kube_controller_manager_status.stdout }}"
+  tags: 
+    - "status"
+
+
+#######################################
+# kube-scheduler
+#######################################
+
+- name: Mkdir kube-scheduler dir
+  file:
+    path: "{{ K8S_DIR }}/kube-scheduler"
+    state: directory
+    mode: 0755
+
+- name: Generate kube-scheduler certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/kube-master/files/kube-scheduler-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/kube-master/files/kube-scheduler"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-scheduler-key.pem
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "kube-scheduler-key.pem"
+    - "kube-scheduler.pem"
+    
+- name: Copy kube-scheduler.yaml.template file
+  template:
+    src: kube-scheduler.yaml.j2
+    dest: "{{ K8S_DIR }}/etc/kubernetes/kube-scheduler.yaml"
+    mode: 0755
+
+- name: Generate kube-scheduler kubeconfig file | Set cluster
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-cluster kubernetes 
+  --certificate-authority=roles/cert/files/ca.pem 
+  --embed-certs=true 
+  --server={{ KUBE_APISERVER }} 
+  --kubeconfig=roles/kube-master/files/kube-scheduler.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-scheduler file | Set client credentials
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-credentials system:kube-scheduler   
+  --client-certificate=roles/kube-master/files/kube-scheduler.pem 
+  --client-key=roles/kube-master/files/kube-scheduler-key.pem 
+  --embed-certs=true 
+  --kubeconfig=roles/kube-master/files/kube-scheduler.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-scheduler file | Set context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config set-context system:kube-scheduler   
+  --cluster=kubernetes 
+  --user=system:kube-scheduler  
+  --kubeconfig=roles/kube-master/files/kube-scheduler.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Generate kube-scheduler file | Use context
+  shell: "roles/kubectl/files/v1.16.8/kubectl config use-context system:kube-scheduler 
+  --kubeconfig=roles/kube-master/files/kube-scheduler.kubeconfig"
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy kube-scheduler.kubeconfig file
+  copy:
+    src: kube-scheduler.kubeconfig
+    dest: "{{ K8S_DIR }}/etc/kubernetes/kube-scheduler.kubeconfig"
+    mode: 0755
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable kube-scheduler service
+  systemd:
+    name: kube-scheduler
+    enabled: yes
+    masked: no
+
+- name: Restart kube-scheduler service
+  systemd:
+    state: restarted
+    name: kube-scheduler
+
+- name: Get kube-scheduler status
+  shell: "systemctl status kube-scheduler |grep 'Active:'"
+  register: kube_scheduler_status
+  tags: 
+    - "status"
+
+- name: Echo kube-scheduler status
+  debug:
+    msg: "{{ kube_scheduler_status.stdout }}"
+  tags: 
+    - "status"
+

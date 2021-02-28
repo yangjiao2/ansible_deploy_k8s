@@ -1,0 +1,10 @@
+- name: Start Etcd
+  systemd:
+    name: kube-etcd
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  register: st_etcd
+  retries: 10
+  delay: 3
+  until: st_etcd.status.ActiveState == "active"

@@ -1,0 +1,10 @@
+- name: Start kube-proxy service
+  systemd:
+    name: kube-proxy
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  register: st_kube_proxy
+  retries: 10
+  delay: 3
+  until: st_kube_proxy.status.ActiveState == "active"

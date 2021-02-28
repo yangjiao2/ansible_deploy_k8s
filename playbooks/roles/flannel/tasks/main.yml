@@ -1,0 +1,125 @@
+- name: Copy flannel csr
+  delegate_to: localhost
+  run_once: true
+  template:
+    src: templates/{{ item }}.j2
+    dest: "{{ role_path }}/files/{{ item }}"
+  with_items:
+    - "flanneld-csr.json"
+
+- name: Copy system unit
+  template:
+    src: templates/{{ item }}.j2
+    dest: /etc/systemd/system/{{ item }}
+  with_items:
+    - "flanneld.service"
+    
+- name: Copy flannel
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_DIR }}/bin"
+    mode: 0755
+  with_fileglob:
+    - "v0.10.0/*"
+
+- name: Generate flanneld certificate
+  shell: "roles/cert/bin/cfssl gencert 
+  -ca=roles/cert/files/ca.pem 
+  -ca-key=roles/cert/files/ca-key.pem 
+  -config=roles/cert/files/ca-config.json
+  -profile=kubernetes roles/flannel/files/flanneld-csr.json | 
+  roles/cert/bin/cfssljson -bare roles/flannel/files/flanneld "
+  delegate_to: localhost
+  run_once: true
+
+- name: Copy flanneld key and pem
+  copy:
+    src: "{{ item }}"
+    dest: "{{ K8S_SSL_DIR }}/{{ item }}"
+    mode: 0755
+  with_items:
+    - "flanneld-key.pem"
+    - "flanneld.pem"
+
+- name: Write etcd flannel network
+  shell: "roles/etcd/files/v3.3.19/etcdctl --endpoints={{ ETCD_ENDPOINTS }} --ca-file=roles/cert/files/ca.pem 
+  --cert-file=roles/flannel/files/flanneld.pem --key-file=roles/flannel/files/flanneld-key.pem
+  mk {{ FLANNEL_ETCD_PREFIX }}/config 
+  '{\"Network\":\"{{ CLUSTER_CIDR }}\", \"SubnetLen\": 21, \"Backend\": {\"Type\": \"vxlan\"}}'"
+  delegate_to: localhost
+  run_once: true
+  register: shell_result
+  failed_when: not (shell_result.rc == 0 or "Key already exists" in shell_result.stderr)
+  tags:
+    - "init"
+
+- name: Get flanneld network
+  shell: "roles/etcd/files/v3.3.19/etcdctl --endpoints={{ ETCD_ENDPOINTS }} 
+  --ca-file=roles/cert/files/ca.pem  --cert-file=roles/flannel/files/flanneld.pem 
+  --key-file=roles/flannel/files/flanneld-key.pem get {{ FLANNEL_ETCD_PREFIX }}/config"
+  delegate_to: localhost
+  run_once: true
+  register: flanneld_network_res
+  tags:
+    - "init"
+
+- name: Echo flanneld network
+  debug:
+    msg: "{{ flanneld_network_res.stdout }}"
+  run_once: true
+  tags:
+    - "init"
+
+- name: Just force systemd to reread configs (2.4 and above)
+  systemd:
+    daemon_reload: yes
+
+- name: Enable flanneld service
+  systemd:
+    name: flanneld
+    enabled: yes
+    masked: no
+
+- name: Restart flanneld service
+  systemd:
+    state: restarted
+    name: flanneld
+  register: systemd_result
+  retries: 10
+  delay: 3
+  until: systemd_result is succeeded
+
+- name: Check flanneld pod network
+  shell: "roles/etcd/files/v3.3.19/etcdctl --endpoints={{ ETCD_ENDPOINTS }} 
+  --ca-file=roles/cert/files/ca.pem --cert-file=roles/flannel/files/flanneld.pem  
+  --key-file=roles/flannel/files/flanneld-key.pem ls {{ FLANNEL_ETCD_PREFIX }}/subnets"
+  delegate_to: localhost
+  run_once: true
+  register: flanneld_subnet_res
+  tags: 
+    - "status"
+    - "init"
+
+- name: Echo flanneld subnet
+  debug:
+    msg: "{{ flanneld_subnet_res.stdout }}"
+  run_once: true
+  tags: 
+    - "status"
+    - "init"
+
+- name: Ip show flannel.1
+  shell: "ip addr show flannel.1|grep -w inet"
+  register: ip_show_res
+  retries: 10
+  delay: 3
+  until: ip_show_res.rc == 0
+  tags: 
+    - "status"
+
+- name: Echo ip show flannel.1 inet
+  debug:
+    msg: "{{ ip_show_res.stdout }}"
+  tags: 
+    - "status"
+

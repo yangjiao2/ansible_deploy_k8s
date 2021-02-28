@@ -1,0 +1,26 @@
+- name: Rollback kube-scheduler
+  block:
+    - name: Stop kube-scheduler service
+      include_role:
+        name: common
+        tasks_from: stop-scheduler
+    - name: Copy kube-scheduler exe
+      copy:
+        remote_src: True
+        src: "{{ K8S_DIR }}/bin/kube-scheduler.bk"
+        dest: "{{ K8S_DIR }}/bin/kube-scheduler"
+
+    - name: Copy kube-scheduler system unit
+      copy:
+        remote_src: True
+        src: "{{ SYSTEMD_CFG_DIR }}/kube-scheduler.service.bk"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-scheduler.service"
+
+    - name: Start kube-scheduler service
+      include_role:
+        name: common
+        tasks_from: start-scheduler
+
+  # when: (op is defined) and (op == "rollback")
+- name: Check kube-scheduler
+  import_tasks: check.yml

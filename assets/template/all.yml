@@ -1,0 +1,154 @@
+---
+
+# --------------------------------------------------------------
+## 节点信息，请勿修改
+# --------------------------------------------------------------
+
+# 集群主机的 IP 数组
+# NODE_IPS: [ 172.27.140.210 172.27.140.211 ]
+NODE_IPS: "{{ groups['k8s_cluster'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+# 集群主机的主机名数组
+# NODE_NAMES: [ hl-k8s01, hl-k8s02 ] 或 [ Undefined, Undefined ]
+NODE_HOSTNAMES: "{{ groups['k8s_cluster'] | map('extract', hostvars, 'node_hostname') | list }}"
+
+# 非root部署时，先知部署所用的账户，与部署k8s本身无关，与部署先知后能否使用kubectl有关系
+DEPLOY_USER_NAME: "root"
+home_dir: '{% if DEPLOY_USER_NAME != "root" %}/home/{{ DEPLOY_USER_NAME }}{% else %}/root{% endif %}'
+KUBECONF_PATH: ".kube/config"
+SUPERVISOR_DIR: "{{ home_dir }}/supervisor"
+
+
+# --------------------------------------------------------------
+## 以下参数可以看情况修改
+# --------------------------------------------------------------
+
+# 节点间互联网络接口名称
+# IFACE: "eth0"
+
+# DNS related configs
+KUBELET_RESOLVE_CONF: ""
+# - "search 4pd.io"
+# - "nameserver 172.27.0.2"
+
+# k8s 各组件数据目录
+K8S_DIR: "/mnt/disk0/data/k8s"
+K8S_SSL_DIR: "{{ K8S_DIR }}/etc/kubernetes/ssl"
+
+# docker 数据目录
+DOCKER_DIR: "/mnt/disk0/data/docker"
+
+# etcd 数据目录
+ETCD_DIR: "{{ K8S_DIR }}"
+ETCD_SSL_DIR: "{{ ETCD_DIR }}/etc/kubernetes/ssl"
+
+KUBELET_PORT: "10250"
+KUBELET_MAX_PODS: "220"
+KUBELET_HEATHZ_PORT: "10248"
+
+# systemd journald 日志相关配置参数
+## 日志占用磁盘空间限额
+journald_max_disk_size: "20G"
+## 单日志文件大小，超限后会被切割
+journald_max_file_size: "200M"
+## 日志保存时间
+journald_retention_period: "2week"
+## 是否转发到 syslog
+journald_forward_syslog: "no"
+
+
+# --------------------------------------------------------------
+## 以下参数一般不需要修改
+# --------------------------------------------------------------
+
+# 集群内部 docker registry 地址
+# DOCKER_REGISTRYS: [ 172.27.140.210:35000, 172.27.140.211:35000 ]
+DOCKER_REGISTRY_STR: "{% for node in NODE_IPS %}{% for h in ['35000','5872','5873','5874'] %}{{ node }}:{{ h }},{% endfor %}{% endfor %}"
+DOCKER_REGISTRYS: "{{ DOCKER_REGISTRY_STR.rstrip(',').split(',') }}"
+
+# 微软提供的代理
+GCR_PROXY: "gcr.azk8s.cn/google_containers"
+
+# 生成 EncryptionConfig 所需的加密 key
+# ENCRYPTION_KEY: $(head -c 32 /dev/urandom | base64)
+ENCRYPTION_KEY: HqZI+SHQbYPR+sB3ev5MGtvFHxfGiWeqAOxDqIe4D3Y=
+
+# kube-apiserver 的反向代理(kube-nginx)地址端口
+KUBE_APISERVER: "https://127.0.0.1:8443"
+
+# TLS Bootstrapping 使用的 Token，可以使用命令 head -c 16 /dev/urandom | od -An -t x | tr -d ' ' 生成
+BOOTSTRAP_TOKEN: "47f392.d22d04e89a65eb22"
+
+# 最好使用 当前未用的网段 来定义服务网段和 Pod 网段
+
+# 服务网段，部署前路由不可达，部署后集群内路由可达(kube-proxy 保证)
+SERVICE_CIDR: "10.42.0.0/16"
+
+# Pod 网段，建议 /16 段地址，部署前路由不可达，部署后集群内路由可达(flanneld 保证)
+CLUSTER_CIDR: "10.244.0.0/16"
+
+# 服务端口范围 (NodePort Range)
+NODE_PORT_RANGE: "30000-32767"
+
+# flanneld 网络配置前缀
+FLANNEL_ETCD_PREFIX: "/kubernetes/network"
+
+# kubernetes 服务 IP (一般是 SERVICE_CIDR 中第一个IP)
+CLUSTER_KUBERNETES_SVC_IP: "10.42.0.1"
+
+# 集群 DNS 服务 IP (从 SERVICE_CIDR 中预分配)
+CLUSTER_DNS_SVC_IP: "10.42.0.10"
+
+# 集群 DNS 域名（末尾不带点号）
+CLUSTER_DNS_DOMAIN: "cluster.local"
+
+K8S_TMP_DIR: "/opt/k8s"
+ETCD_BACKUP_DIR: "~/.prophet/etcd_backup"
+SYSTEMD_CFG_DIR: "/etc/systemd/system"
+KUBECTL_CMD: "k"
+# --------------------------------------------------------------
+# etcd 配置，自动生成。请勿修改
+# --------------------------------------------------------------
+
+# etcd 集群初始状态 new/existing
+CLUSTER_STATE: "new"
+
+# etcd、etcd_to_add、etcd_to_delete 节点组，由 inventory/hosts 和 inventory/scale_hosts 决定
+# 由 IP 表示的节点组
+GROUP_ETCD_IP: "{{ groups['etcd'] | map('extract', hostvars, 'ansible_host') | list }}"
+GROUP_ETCD_TO_ADD_IP: "{{ groups['etcd_to_add'] | map('extract', hostvars, 'ansible_host') | list }}"
+GROUP_ETCD_TO_DELETE_IP: "{{ groups['etcd_to_delete'] | map('extract', hostvars, 'ansible_host') | list }}"
+# 由 hostname 表示的节点组
+GROUP_ETCD_HOSTNAME: "{{ groups['etcd'] | map('extract', hostvars, 'node_hostname') | list }}"
+GROUP_ETCD_TO_ADD_HOSTNAME: "{{ groups['etcd_to_add'] | map('extract', hostvars, 'node_hostname') | list }}"
+GROUP_ETCD_TO_DELETE_HOSTNAME: "{{ groups['etcd_to_delete'] | map('extract', hostvars, 'node_hostname') | list }}"
+# 如果在 inventory/hosts 中设置了主机变量 node_hostname，则全部节点由主机名表示，否则用 IP 表示
+# 之所以要有 hostname 和 IP 两种形式表示的主机组，是因为 etcd-csr 的 SAN 要覆盖这两种，使签发的证书对 hostname 和 IP 都有效
+GROUP_ETCD: "{% if 'Undefined' in NODE_HOSTNAMES %}{{ GROUP_ETCD_IP }}{% else %}{{ GROUP_ETCD_HOSTNAME }}{% endif %}"
+GROUP_ETCD_TO_ADD: "{% if 'Undefined' in NODE_HOSTNAMES %}{{ GROUP_ETCD_TO_ADD_IP }}{% else %}{{ GROUP_ETCD_TO_ADD_HOSTNAME }}{% endif %}"
+GROUP_ETCD_TO_DELETE: "{% if 'Undefined' in NODE_HOSTNAMES %}{{ GROUP_ETCD_TO_DELETE_IP }}{% else %}{{ GROUP_ETCD_TO_DELETE_HOSTNAME }}{% endif %}"
+
+# 所有的 etcd 节点，包括 inventory hosts 中已有的、scale_hosts 中即将添加的，排除 scale_hosts 中即将删除的
+ALL_ETCD_NODES: "{{ GROUP_ETCD | union(GROUP_ETCD_TO_ADD) | difference(GROUP_ETCD_TO_DELETE) }}"
+ALL_ETCD_NODES_IP: "{{ GROUP_ETCD_IP | union(GROUP_ETCD_TO_ADD_IP) | difference(GROUP_ETCD_TO_DELETE_IP) }}"
+OLD_ALL_ETCD_NODES: "{{ GROUP_ETCD }}"
+
+# etcd 集群间通信的IP和端口
+# ETCD_NODES: "172.27.140.210=https://172.27.140.210:2380,172.27.140.211=https://172.27.140.211:2380"
+TMP1_NODES: "{% for h in ALL_ETCD_NODES %}{{ h }}=https://{{ h }}:2380,{% endfor %}"
+ETCD_NODES: "{{ TMP1_NODES.rstrip(',') }}"
+
+# etcd 对外开放的IP和端口
+# ETCD_ENDPOINTS: "https://172.27.140.210:2379,https://172.27.140.211:2379"
+TMP2_NODES: "{% for h in ALL_ETCD_NODES %}https://{{ h }}:2379,{% endfor %}"
+ETCD_ENDPOINTS: "{{ TMP2_NODES.rstrip(',') }}"
+
+# etcd 对外开放的IP和端口
+TMP3_NODES: "{% for h in OLD_ALL_ETCD_NODES %}https://{{ h }}:2379,{% endfor %}"
+OLD_ETCD_ENDPOINTS: "{{ TMP3_NODES.rstrip(',') }}"
+
+# kubelet 配置
+KUBELET_NODE_ALLOCATABLE: 'pods{% if KUBE_RESERVED != "" %},KUBE_RESERVED{% endif %}{% if SYSTEM_RESERVED != "" %},SYSTEM_RESERVED{% endif %}'
+
+# kubelet_resolv_path 默认路径/etc/resolve.conf
+KUBELET_RESOLV_PATH: '{% if KUBELET_RESOLVE_CONF != "" %}{{ K8S_DIR }}/etc/kubernetes/resolv.conf{% else %}/etc/resolv.conf{% endif %}'

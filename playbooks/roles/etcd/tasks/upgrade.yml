@@ -1,0 +1,79 @@
+- name: Upgrade Etcd
+  block:
+    - name: Get old etcd config path
+      shell: "systemctl status kube-etcd | grep Loaded: | cut -d '(' -f2|cut -d ';' -f1"
+      register: old_config_path
+
+
+    - name: debug
+      debug: var=old_config_path.stdout
+    
+    # 为了应对通过以前shell部署的etcd的证书是用的kubernetes.pem
+    - name: Copy for etcd pem
+      copy:
+        remote_src: True
+        src: "{{ ETCD_DIR }}/etc/kubernetes/ssl/kubernetes.pem"
+        dest: "{{ ETCD_DIR }}/etc/kubernetes/ssl/etcd.pem"
+      ignore_errors: true
+    - name: Copy for etcd key
+      copy:
+        remote_src: True
+        src: "{{ ETCD_DIR }}/etc/kubernetes/ssl/kubernetes-key.pem"
+        dest: "{{ ETCD_DIR }}/etc/kubernetes/ssl/etcd-key.pem"
+      ignore_errors: true
+    
+    - name: Stop etcd service
+      include_role:
+        name: common
+        tasks_from: stop-etcd
+      # import_tasks: stop-service.yml
+
+    - name: Copy new etcd and etcdctl
+      copy:
+        src: "{{ item }}"
+        dest: "{{ ETCD_DIR }}/bin/{{ item | basename }}.16"
+        mode: 0755
+      with_fileglob:
+        - "roles/etcd/files/v3.3.19/*"
+
+    - name: Move backup.sh
+      copy:
+        src: "roles/common/files/backup.sh"
+        dest: "{{ ETCD_DIR }}/bin/"
+        mode: 0755
+    - name: Execute whether backup etcd
+      shell: "sh {{ ETCD_DIR }}/bin/backup.sh {{ ETCD_DIR }}/bin/etcd.16 {{ ETCD_DIR }}/bin/etcd"
+    - name: Execute whether backup etcdctl
+      shell: "sh {{ ETCD_DIR }}/bin/backup.sh {{ ETCD_DIR }}/bin/etcdctl.16 {{ ETCD_DIR }}/bin/etcdctl"
+
+    - name: Copy new Etcd system unit
+      template:
+        src: "{{ item }}"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-etcd.service.16"
+        mode: 0755
+      with_items:
+        - roles/etcd/templates/kube-etcd.service.j2
+      
+    - name: Backup old Etcd file
+      copy:
+        remote_src: True
+        src: "{{ item }}"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-etcd.service"
+        mode: 0755
+      with_items:
+        - "{{ old_config_path.stdout }}"
+
+    - name: Execute whether backup system unit
+      shell: "sh {{ ETCD_DIR }}/bin/backup.sh {{ SYSTEMD_CFG_DIR }}/kube-etcd.service.16 {{ SYSTEMD_CFG_DIR }}/kube-etcd.service"
+
+    - name: Start etcd service
+      include_role:
+        name: common
+        tasks_from: start-etcd
+
+- name: Check etcd
+  import_role:
+    name: common
+    tasks_from: check-etcd
+
+  # when: (op is not defined) or (op == "upgrade")

@@ -1,0 +1,8 @@
+---
+- hosts: k8s_master
+  serial: 1
+  tasks:
+    - name: Import kube-scheduler | Upgrade
+      include_role:
+        name:  kube-scheduler
+        tasks_from: upgrade

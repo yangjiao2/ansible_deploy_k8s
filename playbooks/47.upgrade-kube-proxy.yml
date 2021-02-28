@@ -1,0 +1,9 @@
+---
+- hosts: k8s_node
+  serial: 20%
+  max_fail_percentage: 49
+  tasks:
+    - name: Import kube-proxy | Upgrade
+      include_role:
+        name:  kube-proxy
+        tasks_from: upgrade

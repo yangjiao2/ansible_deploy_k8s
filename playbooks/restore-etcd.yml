@@ -1,0 +1,8 @@
+---
+- hosts: etcd
+  gather_facts: True
+  tasks:
+    - name: Import etcd | Restore
+      include_role:
+        name: etcd
+        tasks_from: restore

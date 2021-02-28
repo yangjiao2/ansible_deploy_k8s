@@ -1,0 +1,10 @@
+- name: Check kubelet
+  import_role:
+    name: common
+    tasks_from: check-kubelet
+- name: Check whether container restart
+  import_role:
+    name: common
+    tasks_from: check-container
+  vars:
+    component: kubelet

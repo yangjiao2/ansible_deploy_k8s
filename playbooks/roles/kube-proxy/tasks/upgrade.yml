@@ -1,0 +1,68 @@
+- name: Upgrage kube-proxy
+  block:
+    - name: Mkdir kube-proxy dir
+      file:
+        path: "{{ K8S_DIR }}/kube-proxy"
+        state: directory
+        mode: 0755
+    - name: Get old kube-proxy config path
+      shell: "systemctl status kube-proxy| grep Loaded: | cut -d '(' -f2|cut -d ';' -f1"
+      register: old_config_path
+
+    - name: debug
+      debug: var=old_config_path.stdout
+
+    - name: Copy kube-proxy conf
+      template:
+        src: roles/kube-node/templates/{{ item }}.j2
+        dest: "{{ K8S_DIR }}/etc/kubernetes/{{ item }}.16"
+      with_items:
+        - "kube-proxy-config.yaml"
+
+    - name: Copy kube-proxy new system unit
+      template:
+        src: roles/kube-node/templates/{{ item }}.j2
+        dest: "{{ SYSTEMD_CFG_DIR }}/{{ item }}.16"
+      with_items:
+        - "kube-proxy.service"
+    - name: Backup proxy old system unit
+      copy:
+        remote_src: True
+        src: "{{ item }}"
+        dest: "{{ SYSTEMD_CFG_DIR }}/kube-proxy.service"
+        mode: 0755
+      with_items:
+        - "{{ old_config_path.stdout }}"
+
+    - name: Stop kube-proxy service
+      include_role:
+        name: common
+        tasks_from: stop-kube-proxy
+    
+    - name: Clean rules
+      import_tasks: clean-rules.yml
+    
+    - name: Move backup.sh
+      copy:
+        src: "roles/common/files/backup.sh"
+        dest: "{{ K8S_DIR }}/bin/"
+        mode: 0755
+
+    - name: Execute whether backup system unit
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ SYSTEMD_CFG_DIR }}/kube-proxy.service.16 {{ SYSTEMD_CFG_DIR }}/kube-proxy.service"
+
+    - name: Execute whether backup kube-proxy
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ K8S_DIR }}/bin/kube-proxy.16 {{ K8S_DIR }}/bin/kube-proxy"
+
+    - name: Execute whether backup kube-proxy-config
+      shell: "{{ K8S_DIR }}/bin/backup.sh {{ K8S_DIR }}/etc/kubernetes/kube-proxy-config.yaml.16 {{ K8S_DIR }}/etc/kubernetes/kube-proxy-config.yaml"
+
+    - name: Start kube-proxy service
+      include_role:
+        name: common
+        tasks_from: start-kube-proxy
+
+  # when: (op is not defined) or (op == "upgrade")
+
+- name: Check kube-proxy
+  import_tasks: check.yml
